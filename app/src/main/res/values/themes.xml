@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.SlimTrack" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>
