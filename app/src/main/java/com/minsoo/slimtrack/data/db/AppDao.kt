@@ -20,6 +20,12 @@ interface AppDao {
     @Delete
     suspend fun deleteMeal(meal: MealEntity)
 
+    @Query("DELETE FROM meals WHERE id = :id")
+    suspend fun deleteMealById(id: Long)
+
+    @Query("DELETE FROM meals WHERE dateIso < :startDateIso")
+    suspend fun deleteMealsBefore(startDateIso: String)
+
     @Query("SELECT * FROM meals WHERE dateIso = :dateIso ORDER BY createdAtEpochMs ASC")
     fun observeMealsForDate(dateIso: String): Flow<List<MealEntity>>
 
@@ -38,6 +44,12 @@ interface AppDao {
 
     @Delete
     suspend fun deleteDrink(drink: DrinkEntity)
+
+    @Query("DELETE FROM drinks WHERE id = :id")
+    suspend fun deleteDrinkById(id: Long)
+
+    @Query("DELETE FROM drinks WHERE dateIso < :startDateIso")
+    suspend fun deleteDrinksBefore(startDateIso: String)
 
     @Query("SELECT * FROM drinks WHERE dateIso = :dateIso ORDER BY createdAtEpochMs ASC")
     fun observeDrinksForDate(dateIso: String): Flow<List<DrinkEntity>>
@@ -74,6 +86,9 @@ interface AppDao {
     @Delete
     suspend fun deleteWeightLog(log: WeightLogEntity)
 
+    @Query("DELETE FROM weight_logs WHERE dateIso < :startDateIso")
+    suspend fun deleteWeightLogsBefore(startDateIso: String)
+
     @Query("SELECT * FROM weight_logs ORDER BY measuredAtIso DESC")
     fun observeAllWeightLogs(): Flow<List<WeightLogEntity>>
 
@@ -99,6 +114,12 @@ interface AppDao {
     @Delete
     suspend fun deleteExercise(item: ExerciseEntity)
 
+    @Query("DELETE FROM exercises WHERE hcId = :hcId")
+    suspend fun deleteExerciseByHcId(hcId: String)
+
+    @Query("DELETE FROM exercises WHERE dateIso < :startDateIso")
+    suspend fun deleteExercisesBefore(startDateIso: String)
+
     @Query("SELECT * FROM exercises WHERE dateIso = :dateIso ORDER BY durationMinutes DESC")
     fun observeExercisesForDate(dateIso: String): Flow<List<ExerciseEntity>>
 
@@ -111,6 +132,9 @@ interface AppDao {
     // Advice
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAdvice(advice: AdviceEntity): Long
+
+    @Query("DELETE FROM advice_logs WHERE dateIso < :startDateIso")
+    suspend fun deleteAdviceBefore(startDateIso: String)
 
     @Query("SELECT * FROM advice_logs ORDER BY createdAtEpochMs DESC")
     fun observeAllAdvice(): Flow<List<AdviceEntity>>

@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,6 +24,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.LocalBar
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -54,15 +54,20 @@ import androidx.compose.ui.unit.sp
 import com.minsoo.slimtrack.data.db.DrinkEntity
 import com.minsoo.slimtrack.data.db.ExerciseEntity
 import com.minsoo.slimtrack.data.db.FoodItemEntry
+import com.minsoo.slimtrack.data.db.MealEntity
 import com.minsoo.slimtrack.data.db.MealType
 import com.minsoo.slimtrack.domain.AlcoholCalculator
 import com.minsoo.slimtrack.domain.AlcoholPreset
 import com.minsoo.slimtrack.ui.theme.StatusGreenBg
+import com.minsoo.slimtrack.ui.theme.StatusGreenBorder
 import com.minsoo.slimtrack.ui.theme.StatusGreenText
 import com.minsoo.slimtrack.ui.theme.StatusRedBg
 import com.minsoo.slimtrack.ui.theme.StatusRedBorder
 import com.minsoo.slimtrack.ui.theme.StatusRedText
+import kotlinx.serialization.json.Json
 import java.time.LocalDate
+
+private val itemJsonParser = Json { ignoreUnknownKeys = true }
 
 @Composable
 fun MealAndDrinkScreen(
@@ -73,6 +78,7 @@ fun MealAndDrinkScreen(
     stagedConfidence: Float,
     isAnalyzingPhoto: Boolean,
     analysisStatusMessage: String?,
+    todayMeals: List<MealEntity>,
     todayDrinks: List<DrinkEntity>,
     todayExercises: List<ExerciseEntity>,
     onSelectMealType: (MealType) -> Unit,
@@ -82,10 +88,12 @@ fun MealAndDrinkScreen(
     onRemoveStagedItem: (Int) -> Unit,
     onAddManualFoodItem: (FoodItemEntry) -> Unit,
     onSaveMeal: () -> Unit,
+    onDeleteMeal: (MealEntity) -> Unit,
     onAddDrink: (AlcoholPreset, Int, Float) -> Unit,
     onDeleteDrink: (DrinkEntity) -> Unit,
     onSyncHealthConnectExercises: () -> Unit,
     onAddManualExercise: (String, Int, Int) -> Unit,
+    onDeleteExercise: (ExerciseEntity) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var manualFoodName by remember { mutableStateOf("") }
@@ -116,6 +124,136 @@ fun MealAndDrinkScreen(
             overflow = TextOverflow.Ellipsis
         )
 
+        if (!analysisStatusMessage.isNullOrBlank()) {
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = analysisStatusMessage,
+                    fontSize = 11.5.sp,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                )
+            }
+        }
+
+        // Section 0: Saved Meals for Selected Date (Persisted in local Room DB with 1-tap Delete!)
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(
+                            Icons.Default.Restaurant,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "✅ $selectedDate 저장된 식단 내역 (${todayMeals.size}건)",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Surface(
+                        color = StatusGreenBg,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.border(1.dp, StatusGreenBorder, RoundedCornerShape(12.dp))
+                    ) {
+                        Text(
+                            text = "총 ${todayMeals.sumOf { it.totalKcal }} kcal",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = StatusGreenText,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+
+                if (todayMeals.isEmpty()) {
+                    Text(
+                        text = "아직 저장된 식단이 없습니다. 아래에서 사진 촬영 또는 수동 입력 후 [기록 저장]을 눌러주세요.",
+                        fontSize = 11.5.sp,
+                        color = Color(0xFF64748B),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                } else {
+                    todayMeals.forEach { meal ->
+                        val mealTypeEnum = runCatching { MealType.valueOf(meal.mealType) }.getOrNull()
+                        val typeTitle = mealTypeEnum?.let { "${it.emoji} ${it.labelKo}" } ?: meal.mealType
+                        val parsedItems = remember(meal.itemsJson) {
+                            runCatching { itemJsonParser.decodeFromString<List<FoodItemEntry>>(meal.itemsJson) }
+                                .getOrDefault(emptyList())
+                        }
+                        val itemsSummary = if (parsedItems.isNotEmpty()) {
+                            parsedItems.joinToString(", ") { "${it.name}(${it.kcal}kcal)" }
+                        } else {
+                            meal.notes
+                        }
+
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        text = "[$typeTitle] ${meal.totalKcal} kcal (단백질 ${meal.proteinGrams.toInt()}g)",
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFF0F172A),
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    if (itemsSummary.isNotBlank()) {
+                                        Text(
+                                            text = itemsSummary,
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF475569),
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                DeleteRecordButton(onClick = { onDeleteMeal(meal) })
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Section 1: Meal & Anju Photo Calorie Analysis
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -124,14 +262,14 @@ fun MealAndDrinkScreen(
         ) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "📸 매일 3식 & 회식 안주 사진 칼로리 계산",
+                    text = "📸 새 식사 & 회식 안주 추가 (사진 또는 직접 입력)",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     softWrap = false
                 )
 
-                // 5 MealType chips in a single equal-width row (never wraps!)
+                // 5 MealType chips in a single equal-width row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -161,7 +299,7 @@ fun MealAndDrinkScreen(
                     }
                 }
 
-                // Camera & Gallery buttons (concise single-line labels)
+                // Camera & Gallery buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -211,22 +349,6 @@ fun MealAndDrinkScreen(
                             fontSize = 12.sp,
                             maxLines = 1,
                             softWrap = false
-                        )
-                    }
-                }
-
-                if (!analysisStatusMessage.isNullOrBlank()) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            text = analysisStatusMessage,
-                            fontSize = 11.5.sp,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
                         )
                     }
                 }
@@ -290,7 +412,7 @@ fun MealAndDrinkScreen(
                     }
                 }
 
-                // Clean single-line manual food entry row (short labels that never wrap!)
+                // Clean single-line manual food entry row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -347,7 +469,6 @@ fun MealAndDrinkScreen(
                 val stagedTotalKcal = stagedItems.sumOf { it.kcal }
                 val stagedTotalProtein = stagedItems.sumOf { it.proteinGrams.toDouble() }.toInt()
 
-                // Full-width save bar (never wraps into 2 lines!)
                 Button(
                     onClick = onSaveMeal,
                     enabled = stagedItems.isNotEmpty(),
@@ -384,7 +505,6 @@ fun MealAndDrinkScreen(
                     )
                 }
 
-                // Preset chips in 2 clean rows of equal-width boxes
                 val presetsRow1 = AlcoholPreset.entries.take(4)
                 val presetsRow2 = AlcoholPreset.entries.drop(4)
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -418,7 +538,6 @@ fun MealAndDrinkScreen(
                     }
                 }
 
-                // Quick volume tiles: Rectangular tiles with 2 clean lines ("1잔" / "50ml") -> NEVER splits "ml"!
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -510,6 +629,44 @@ fun MealAndDrinkScreen(
                         }
                     }
                 }
+
+                if (todayDrinks.isNotEmpty()) {
+                    HorizontalDivider()
+                    Text(
+                        text = "저장된 음주 내역 (${todayDrinks.sumOf { it.kcal }}kcal)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                    todayDrinks.forEach { d ->
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "${d.displayLabel} ${d.volumeMl}ml (${d.abvPct}%) — ${d.kcal}kcal",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                DeleteRecordButton(onClick = { onDeleteDrink(d) })
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -564,25 +721,24 @@ fun MealAndDrinkScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "[${ex.source}] ${ex.title} (${ex.durationMinutes}분)",
+                                    text = "[${ex.source}] ${ex.title} (${ex.durationMinutes}분) · ${ex.activeKcal} kcal",
                                     fontSize = 12.sp,
                                     color = StatusGreenText,
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
-                                    softWrap = false
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
                                 )
-                                Text(
-                                    text = "+${ex.activeKcal} kcal",
-                                    fontSize = 12.sp,
-                                    color = StatusGreenText,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
+                                Spacer(Modifier.width(8.dp))
+                                DeleteRecordButton(onClick = { onDeleteExercise(ex) })
                             }
                         }
                     }
@@ -629,6 +785,38 @@ fun MealAndDrinkScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun DeleteRecordButton(onClick: () -> Unit) {
+    Surface(
+        color = StatusRedBg,
+        shape = RoundedCornerShape(6.dp),
+        modifier = Modifier
+            .border(1.dp, StatusRedBorder, RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = "삭제",
+                tint = StatusRedText,
+                modifier = Modifier.size(13.dp)
+            )
+            Spacer(Modifier.width(3.dp))
+            Text(
+                text = "삭제",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = StatusRedText,
+                maxLines = 1,
+                softWrap = false
+            )
         }
     }
 }

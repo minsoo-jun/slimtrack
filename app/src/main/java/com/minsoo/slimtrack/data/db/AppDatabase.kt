@@ -31,7 +31,10 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "slimtrack.db"
-                ).fallbackToDestructiveMigration().build().also { INSTANCE = it }
+                )
+                    .setJournalMode(JournalMode.WRITE_AHEAD_LOGGING)
+                    .build()
+                    .also { INSTANCE = it }
             }
         }
 

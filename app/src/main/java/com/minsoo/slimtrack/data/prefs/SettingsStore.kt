@@ -86,22 +86,58 @@ class SettingsStore(private val context: Context) {
         val ONBOARDING_DONE = booleanPreferencesKey("onboarding_completed")
     }
 
-    val settingsFlow: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
-        val strictness = prefs[Keys.STRICTNESS]?.let {
+    private val syncPrefs = context.getSharedPreferences("slimtrack_settings_backup", Context.MODE_PRIVATE)
+
+    private fun readBackupSettings(): AppSettings {
+        val model = Gemini3Catalog.ensureGemini3Model(syncPrefs.getString("gemini_model", null))
+        val tol = syncPrefs.getInt("tolerance_kcal", 150)
+        val strictness = syncPrefs.getString("strictness", null)?.let {
             runCatching { AdviceStrictness.valueOf(it) }.getOrNull()
         } ?: AdviceStrictness.STRICT
-        val resolvedModel = Gemini3Catalog.ensureGemini3Model(prefs[Keys.GEMINI_MODEL])
-        AppSettings(
-            geminiModel = resolvedModel,
-            toleranceKcal = prefs[Keys.TOLERANCE_KCAL] ?: 150,
+        val sun = syncPrefs.getBoolean("sunday_morning_alarm", true)
+        val meal = syncPrefs.getBoolean("missing_meal_21_alarm", true)
+        val done = syncPrefs.getBoolean("onboarding_completed", false)
+        return AppSettings(
+            geminiModel = model,
+            toleranceKcal = tol,
             strictness = strictness,
-            sundayMorningAlarmEnabled = prefs[Keys.SUNDAY_ALARM] ?: true,
-            missingMeal21AlarmEnabled = prefs[Keys.MISSING_MEAL_ALARM] ?: true,
-            onboardingCompleted = prefs[Keys.ONBOARDING_DONE] ?: false
+            sundayMorningAlarmEnabled = sun,
+            missingMeal21AlarmEnabled = meal,
+            onboardingCompleted = done
         )
     }
 
+    private fun writeBackupSettings(settings: AppSettings) {
+        syncPrefs.edit()
+            .putString("gemini_model", Gemini3Catalog.ensureGemini3Model(settings.geminiModel))
+            .putInt("tolerance_kcal", settings.toleranceKcal)
+            .putString("strictness", settings.strictness.name)
+            .putBoolean("sunday_morning_alarm", settings.sundayMorningAlarmEnabled)
+            .putBoolean("missing_meal_21_alarm", settings.missingMeal21AlarmEnabled)
+            .putBoolean("onboarding_completed", settings.onboardingCompleted)
+            .commit()
+    }
+
+    val settingsFlow: Flow<AppSettings> = context.settingsDataStore.data.map { prefs ->
+        val backup = readBackupSettings()
+        val strictness = prefs[Keys.STRICTNESS]?.let {
+            runCatching { AdviceStrictness.valueOf(it) }.getOrNull()
+        } ?: backup.strictness
+        val resolvedModel = Gemini3Catalog.ensureGemini3Model(prefs[Keys.GEMINI_MODEL] ?: backup.geminiModel)
+        val resolved = AppSettings(
+            geminiModel = resolvedModel,
+            toleranceKcal = prefs[Keys.TOLERANCE_KCAL] ?: backup.toleranceKcal,
+            strictness = strictness,
+            sundayMorningAlarmEnabled = prefs[Keys.SUNDAY_ALARM] ?: backup.sundayMorningAlarmEnabled,
+            missingMeal21AlarmEnabled = prefs[Keys.MISSING_MEAL_ALARM] ?: backup.missingMeal21AlarmEnabled,
+            onboardingCompleted = prefs[Keys.ONBOARDING_DONE] ?: backup.onboardingCompleted
+        )
+        writeBackupSettings(resolved)
+        resolved
+    }
+
     suspend fun updateSettings(settings: AppSettings) {
+        writeBackupSettings(settings)
         context.settingsDataStore.edit { prefs ->
             prefs[Keys.GEMINI_MODEL] = Gemini3Catalog.ensureGemini3Model(settings.geminiModel)
             prefs[Keys.TOLERANCE_KCAL] = settings.toleranceKcal

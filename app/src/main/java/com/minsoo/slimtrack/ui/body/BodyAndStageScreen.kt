@@ -1,9 +1,11 @@
 package com.minsoo.slimtrack.ui.body
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -28,16 +30,13 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
@@ -49,7 +48,6 @@ import com.minsoo.slimtrack.data.ai.InBodyOcrResponse
 import com.minsoo.slimtrack.data.db.InBodyEntity
 import com.minsoo.slimtrack.data.db.WeightLogEntity
 import com.minsoo.slimtrack.data.repo.CurrentBodyStatus
-import com.minsoo.slimtrack.domain.BmrCalculator
 import com.minsoo.slimtrack.domain.GoalStage
 import com.minsoo.slimtrack.ui.theme.StatusGreenBg
 import com.minsoo.slimtrack.ui.theme.StatusGreenBorder
@@ -60,36 +58,26 @@ import java.time.LocalDate
 @Composable
 fun BodyAndStageScreen(
     today: LocalDate,
+    effectiveStartDate: LocalDate = LocalDate.now(),
     bodyStatus: CurrentBodyStatus,
     weightLogs: List<WeightLogEntity>,
     inBodyHistory: List<InBodyEntity>,
     isAnalyzingInBody: Boolean,
     syncStatusMessage: String?,
-    onAddManualWeight: (LocalDate, Float, Float?) -> Unit,
     onManualSyncHealthConnectWeight: () -> Unit,
     onPickInBodyScreenshot: () -> Unit,
-    onSaveInBodyManualOrOcr: (InBodyOcrResponse) -> Unit,
+    onSaveInBodyManualOrOcr: (InBodyOcrResponse) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var dailyWeightInput by remember(bodyStatus.currentWeightKg) {
-        mutableStateOf(String.format("%.1f", bodyStatus.currentWeightKg))
-    }
-    var dailyFatPctInput by remember { mutableStateOf("") }
-
     val latestInBody = bodyStatus.latestInBody
-    var ibMeasuredAt by remember(latestInBody.measuredAtIso) { mutableStateOf(latestInBody.measuredAtIso) }
-    var ibWeight by remember(latestInBody.weightKg) { mutableStateOf(latestInBody.weightKg.toString()) }
-    var ibMuscle by remember(latestInBody.skeletalMuscleKg) { mutableStateOf(latestInBody.skeletalMuscleKg.toString()) }
-    var ibFatMass by remember(latestInBody.bodyFatMassKg) { mutableStateOf(latestInBody.bodyFatMassKg.toString()) }
-    var ibFatPct by remember(latestInBody.bodyFatPct) { mutableStateOf(latestInBody.bodyFatPct.toString()) }
-    var ibEcw by remember(latestInBody.ecwRatio) { mutableStateOf(latestInBody.ecwRatio.toString()) }
-    var ibBmi by remember(latestInBody.bmi) { mutableStateOf(latestInBody.bmi.toString()) }
-    var ibVisceral by remember(latestInBody.visceralFatLevel) { mutableStateOf(latestInBody.visceralFatLevel.toString()) }
+    val filteredWeightLogs = remember(weightLogs, effectiveStartDate) {
+        weightLogs
+            .filter { it.dateIso >= effectiveStartDate.toString() }
+            .sortedBy { it.measuredAtIso }
+    }
 
-    val liveCalculatedBmr = remember(ibWeight, ibFatMass) {
-        val w = ibWeight.toDoubleOrNull() ?: latestInBody.weightKg.toDouble()
-        val f = ibFatMass.toDoubleOrNull() ?: latestInBody.bodyFatMassKg.toDouble()
-        BmrCalculator.inbodyBmr(w, f)
+    val latestSyncedFatPct = remember(filteredWeightLogs, latestInBody) {
+        filteredWeightLogs.lastOrNull { it.bodyFatPct != null }?.bodyFatPct ?: latestInBody.bodyFatPct
     }
 
     Column(
@@ -100,7 +88,7 @@ fun BodyAndStageScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = "⚖ 매일 체중 · InBody(주 1회) · 3단계 목표",
+            text = "📊 Health 체중·체지방 그래프 & InBody · 3단계 목표",
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
@@ -124,13 +112,13 @@ fun BodyAndStageScreen(
             }
         }
 
-        // Section 1: Daily Manual Weight & Health Connect Manual Sync Menu
+        // Section 1: Health Connect Weight & Body Fat Trend Graphs (Manual inputs removed as requested!)
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -138,7 +126,7 @@ fun BodyAndStageScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "1️⃣ 매일 체중 입력 & Health 동기화",
+                            text = "1️⃣ Health Connect 체중 & 체지방 그래프",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -146,7 +134,7 @@ fun BodyAndStageScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "현재: ${String.format("%.1fkg", bodyStatus.currentWeightKg)} (${bodyStatus.currentWeightSource})",
+                            text = "유효 시작일($effectiveStartDate) 이후 Health 동기화 데이터 기준",
                             fontSize = 11.sp,
                             color = Color(0xFF475569),
                             maxLines = 1,
@@ -164,10 +152,15 @@ fun BodyAndStageScreen(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Icon(
+                                Icons.Default.Sync,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
                             Spacer(Modifier.width(4.dp))
                             Text(
-                                text = "HC 동기화",
+                                text = "Health 동기화",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -178,48 +171,47 @@ fun BodyAndStageScreen(
                     }
                 }
 
+                // Summary tiles for Health Connect Weight & Body Fat
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedTextField(
-                        value = dailyWeightInput,
-                        onValueChange = { dailyWeightInput = it },
-                        label = { Text("체중(kg)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
+                    HealthSummaryBox(
+                        label = "현재 체중 (${bodyStatus.currentWeightSource})",
+                        value = String.format("%.1f kg", bodyStatus.currentWeightKg),
+                        subText = "1단계 목표: ${bodyStatus.stageResult.activeStage.targetWeightMinKg.toInt()}~${bodyStatus.stageResult.activeStage.targetWeightMaxKg.toInt()}kg",
+                        color = TealPrimary,
+                        modifier = Modifier.weight(1f)
                     )
-                    OutlinedTextField(
-                        value = dailyFatPctInput,
-                        onValueChange = { dailyFatPctInput = it },
-                        label = { Text("체지방(%)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
+                    HealthSummaryBox(
+                        label = "체지방률 (Health / InBody)",
+                        value = String.format("%.1f %%", latestSyncedFatPct),
+                        subText = "체지방량 ${latestInBody.bodyFatMassKg}kg · 내장지방 ${latestInBody.visceralFatLevel}Lv",
+                        color = Color(0xFFE11D48),
+                        modifier = Modifier.weight(1f)
                     )
-                    Button(
-                        onClick = {
-                            val w = dailyWeightInput.toFloatOrNull()
-                            val fat = dailyFatPctInput.toFloatOrNull()
-                            if (w != null && w in 35f..250f) {
-                                onAddManualWeight(today, w, fat)
-                            }
-                        },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
-                    ) {
-                        Text("체중 저장", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
-                    }
                 }
 
+                // Graph 1: Weight (kg) Trend Chart
                 WeightTrendChart(
-                    weightLogs = weightLogs,
+                    weightLogs = filteredWeightLogs,
                     latestInBody = latestInBody,
                     targetWeightKg = bodyStatus.stageResult.activeStage.targetWeightMidKg.toFloat()
+                )
+
+                HorizontalDivider()
+
+                // Graph 2: Body Fat (%) Trend Chart
+                BodyFatTrendChart(
+                    weightLogs = filteredWeightLogs,
+                    inBodyHistory = inBodyHistory,
+                    latestInBody = latestInBody,
+                    effectiveStartDate = effectiveStartDate
                 )
             }
         }
 
-        // Section 2: InBody Weekly Record (Screenshot OCR + Manual + Auto Formula BMR)
+        // Section 2: InBody Weekly Record (Screenshot OCR + Auto Formula BMR)
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -227,14 +219,14 @@ fun BodyAndStageScreen(
         ) {
             Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "2️⃣ InBody 정보 (주 1회 · 항상 최신값 사용)",
+                    text = "2️⃣ InBody 정보 (주 1회 스크린샷 · 최신값 자동 반영)",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     softWrap = false
                 )
                 Text(
-                    text = "최신: ${latestInBody.measuredAtIso} (${latestInBody.device}) · BMR = 370 + 21.6 × 제지방량",
+                    text = "최신 측정: ${latestInBody.measuredAtIso} (${latestInBody.device})",
                     fontSize = 11.sp,
                     color = Color(0xFF475569),
                     maxLines = 1,
@@ -250,7 +242,7 @@ fun BodyAndStageScreen(
                     Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = "InBody 스크린샷 OCR 자동 추출 (Gemini 3.x)",
+                        text = "InBody 스크린샷 사진 선택 및 자동 인식",
                         fontSize = 12.5.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
@@ -265,62 +257,15 @@ fun BodyAndStageScreen(
                     }
                 }
 
-                HorizontalDivider()
-
-                OutlinedTextField(
-                    value = ibMeasuredAt,
-                    onValueChange = { ibMeasuredAt = it },
-                    label = { Text("측정일시 (2026-11-07T11:44)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
+                // Clean summary grid of latest InBody metrics
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedTextField(
-                        value = ibWeight,
-                        onValueChange = { ibWeight = it },
-                        label = { Text("체중(kg)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = ibMuscle,
-                        onValueChange = { ibMuscle = it },
-                        label = { Text("골격근(kg)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = ibFatMass,
-                        onValueChange = { ibFatMass = it },
-                        label = { Text("체지방(kg)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                }
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    OutlinedTextField(
-                        value = ibFatPct,
-                        onValueChange = { ibFatPct = it },
-                        label = { Text("체지방률(%)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = ibVisceral,
-                        onValueChange = { ibVisceral = it },
-                        label = { Text("내장지방(Lv)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = ibEcw,
-                        onValueChange = { ibEcw = it },
-                        label = { Text("세포외수분", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    InBodyMetricChip("골격근량", "${latestInBody.skeletalMuscleKg}kg", Modifier.weight(1f))
+                    InBodyMetricChip("체지방량", "${latestInBody.bodyFatMassKg}kg", Modifier.weight(1f))
+                    InBodyMetricChip("내장지방", "${latestInBody.visceralFatLevel}Lv", Modifier.weight(1f))
+                    InBodyMetricChip("세포외수분", "${latestInBody.ecwRatio}", Modifier.weight(1f))
                 }
 
                 Surface(
@@ -339,48 +284,20 @@ fun BodyAndStageScreen(
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "InBody 공식 자동 계산 BMR",
+                                text = "InBody 계산식 기초대사량 (370 + 21.6 × 제지방량)",
                                 fontSize = 10.5.sp,
                                 color = StatusGreenText,
                                 maxLines = 1,
                                 softWrap = false
                             )
                             Text(
-                                text = "${liveCalculatedBmr} kcal / 일",
-                                fontSize = 16.sp,
+                                text = "${bodyStatus.bmrKcal} kcal / 일",
+                                fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 color = StatusGreenText,
                                 maxLines = 1,
                                 softWrap = false
                             )
-                        }
-                        Button(
-                            onClick = {
-                                val w = ibWeight.toFloatOrNull() ?: 98.9f
-                                val smm = ibMuscle.toFloatOrNull() ?: 38.5f
-                                val fm = ibFatMass.toFloatOrNull() ?: 31.1f
-                                val fp = ibFatPct.toFloatOrNull() ?: 31.4f
-                                val ecw = ibEcw.toFloatOrNull() ?: 0.374f
-                                val bmi = ibBmi.toFloatOrNull() ?: 31.9f
-                                val vf = ibVisceral.toIntOrNull() ?: 12
-                                onSaveInBodyManualOrOcr(
-                                    InBodyOcrResponse(
-                                        measuredAtRaw = ibMeasuredAt,
-                                        device = "인바디570",
-                                        weightKg = w,
-                                        skeletalMuscleKg = smm,
-                                        bodyFatMassKg = fm,
-                                        bodyFatPct = fp,
-                                        ecwRatio = ecw,
-                                        bmi = bmi,
-                                        visceralFatLevel = vf,
-                                        bmrReported = null
-                                    )
-                                )
-                            },
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text("InBody 저장", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                         }
                     }
                 }
@@ -416,6 +333,72 @@ fun BodyAndStageScreen(
 }
 
 @Composable
+private fun HealthSummaryBox(
+    label: String,
+    value: String,
+    subText: String,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(8.dp),
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = label,
+                fontSize = 10.sp,
+                color = Color(0xFF475569),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = value,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = color,
+                maxLines = 1,
+                softWrap = false
+            )
+            Text(
+                text = subText,
+                fontSize = 9.5.sp,
+                color = Color(0xFF64748B),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+private fun InBodyMetricChip(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(6.dp),
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(text = label, fontSize = 9.5.sp, color = Color(0xFF64748B), maxLines = 1, softWrap = false)
+            Text(text = value, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, softWrap = false)
+        }
+    }
+}
+
+@Composable
 private fun WeightTrendChart(
     weightLogs: List<WeightLogEntity>,
     latestInBody: InBodyEntity,
@@ -423,7 +406,6 @@ private fun WeightTrendChart(
 ) {
     val points = remember(weightLogs, latestInBody) {
         val list = weightLogs
-            .sortedBy { it.measuredAtIso }
             .map { it.dateIso to it.weightKg }
             .toMutableList()
         if (list.isEmpty()) {
@@ -432,61 +414,215 @@ private fun WeightTrendChart(
         list.takeLast(14)
     }
 
+    val firstVal = points.first().second
+    val lastVal = points.last().second
+
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(
-            text = "체중 추이 (실선: 측정 체중 / 점선: 단계 목표 ${targetWeightKg}kg)",
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            softWrap = false
-        )
-        Canvas(
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "📈 체중(kg) 추이 (실선: Health 체중 / 점선: 목표 ${targetWeightKg}kg)",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                softWrap = false
+            )
+            Text(
+                text = String.format("%.1f → %.1fkg", firstVal, lastVal),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = TealPrimary,
+                maxLines = 1,
+                softWrap = false
+            )
+        }
+        Surface(
+            color = Color(0xFFF8FAFC),
+            shape = RoundedCornerShape(8.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(90.dp)
-                .padding(vertical = 4.dp)
+                .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(8.dp))
         ) {
-            val minW = (minOf(points.minOf { it.second }, targetWeightKg) - 1.5f)
-            val maxW = (maxOf(points.maxOf { it.second }, targetWeightKg) + 1.5f)
-            val span = (maxW - minW).coerceAtLeast(2f)
+            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(90.dp)
+                ) {
+                    val minW = (minOf(points.minOf { it.second }, targetWeightKg) - 1.5f)
+                    val maxW = (maxOf(points.maxOf { it.second }, targetWeightKg) + 1.5f)
+                    val span = (maxW - minW).coerceAtLeast(2f)
 
-            fun yFor(w: Float): Float {
-                val ratio = (w - minW) / span
-                return size.height * (1f - ratio)
-            }
+                    fun yFor(w: Float): Float {
+                        val ratio = (w - minW) / span
+                        return size.height * (1f - ratio)
+                    }
 
-            val targetY = yFor(targetWeightKg)
-            drawLine(
-                color = StatusGreenBorder,
-                start = Offset(0f, targetY),
-                end = Offset(size.width, targetY),
-                strokeWidth = 3f,
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
-            )
-
-            if (points.size == 1) {
-                val y = yFor(points.first().second)
-                drawCircle(color = TealPrimary, radius = 8f, center = Offset(size.width / 2f, y))
-            } else {
-                val stepX = size.width / (points.size - 1).coerceAtLeast(1)
-                for (i in 0 until points.size - 1) {
-                    val x1 = i * stepX
-                    val y1 = yFor(points[i].second)
-                    val x2 = (i + 1) * stepX
-                    val y2 = yFor(points[i + 1].second)
+                    val targetY = yFor(targetWeightKg)
                     drawLine(
-                        color = TealPrimary,
-                        start = Offset(x1, y1),
-                        end = Offset(x2, y2),
-                        strokeWidth = 5f
+                        color = StatusGreenBorder,
+                        start = Offset(0f, targetY),
+                        end = Offset(size.width, targetY),
+                        strokeWidth = 3f,
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
                     )
+
+                    if (points.size == 1) {
+                        val y = yFor(points.first().second)
+                        drawCircle(color = TealPrimary, radius = 8f, center = Offset(size.width / 2f, y))
+                    } else {
+                        val stepX = size.width / (points.size - 1).coerceAtLeast(1)
+                        for (i in 0 until points.size - 1) {
+                            val x1 = i * stepX
+                            val y1 = yFor(points[i].second)
+                            val x2 = (i + 1) * stepX
+                            val y2 = yFor(points[i + 1].second)
+                            drawLine(
+                                color = TealPrimary,
+                                start = Offset(x1, y1),
+                                end = Offset(x2, y2),
+                                strokeWidth = 5f
+                            )
+                        }
+                        points.forEachIndexed { idx, p ->
+                            drawCircle(
+                                color = TealPrimary,
+                                radius = 6f,
+                                center = Offset(idx * stepX, yFor(p.second))
+                            )
+                        }
+                    }
                 }
-                points.forEachIndexed { idx, p ->
-                    drawCircle(
-                        color = TealPrimary,
-                        radius = 6f,
-                        center = Offset(idx * stepX, yFor(p.second))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = points.first().first, fontSize = 9.5.sp, color = Color(0xFF64748B), maxLines = 1, softWrap = false)
+                    Text(text = "총 ${points.size}회 기록", fontSize = 9.5.sp, color = Color(0xFF64748B), maxLines = 1, softWrap = false)
+                    Text(text = points.last().first, fontSize = 9.5.sp, color = Color(0xFF64748B), maxLines = 1, softWrap = false)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BodyFatTrendChart(
+    weightLogs: List<WeightLogEntity>,
+    inBodyHistory: List<InBodyEntity>,
+    latestInBody: InBodyEntity,
+    effectiveStartDate: LocalDate
+) {
+    val fatPoints = remember(weightLogs, inBodyHistory, latestInBody, effectiveStartDate) {
+        val hcFats = weightLogs
+            .filter { it.bodyFatPct != null && it.bodyFatPct > 0f }
+            .map { it.dateIso to it.bodyFatPct!! }
+            .toMutableList()
+        if (hcFats.isEmpty()) {
+            val ibFats = inBodyHistory
+                .filter { it.dateIso >= effectiveStartDate.toString() }
+                .sortedBy { it.measuredAtIso }
+                .map { it.dateIso to it.bodyFatPct }
+            hcFats.addAll(ibFats)
+        }
+        if (hcFats.isEmpty()) {
+            hcFats += latestInBody.dateIso to latestInBody.bodyFatPct
+        }
+        hcFats.takeLast(14)
+    }
+
+    val firstFat = fatPoints.first().second
+    val lastFat = fatPoints.last().second
+    val targetFatPct = 20.0f
+
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = "📉 체지방률(%) 추이 (실선: Health 체지방 / 점선: 표준 20%)",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                softWrap = false
+            )
+            Text(
+                text = String.format("%.1f%% → %.1f%%", firstFat, lastFat),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFE11D48),
+                maxLines = 1,
+                softWrap = false
+            )
+        }
+        Surface(
+            color = Color(0xFFF8FAFC),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(8.dp))
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(80.dp)
+                ) {
+                    val minF = (minOf(fatPoints.minOf { it.second }, targetFatPct) - 2f).coerceAtLeast(5f)
+                    val maxF = (maxOf(fatPoints.maxOf { it.second }, targetFatPct) + 2f)
+                    val span = (maxF - minF).coerceAtLeast(2f)
+
+                    fun yFor(f: Float): Float {
+                        val ratio = (f - minF) / span
+                        return size.height * (1f - ratio)
+                    }
+
+                    val targetY = yFor(targetFatPct)
+                    drawLine(
+                        color = StatusGreenBorder,
+                        start = Offset(0f, targetY),
+                        end = Offset(size.width, targetY),
+                        strokeWidth = 3f,
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), 0f)
                     )
+
+                    val lineColor = Color(0xFFE11D48)
+                    if (fatPoints.size == 1) {
+                        val y = yFor(fatPoints.first().second)
+                        drawCircle(color = lineColor, radius = 8f, center = Offset(size.width / 2f, y))
+                    } else {
+                        val stepX = size.width / (fatPoints.size - 1).coerceAtLeast(1)
+                        for (i in 0 until fatPoints.size - 1) {
+                            val x1 = i * stepX
+                            val y1 = yFor(fatPoints[i].second)
+                            val x2 = (i + 1) * stepX
+                            val y2 = yFor(fatPoints[i + 1].second)
+                            drawLine(
+                                color = lineColor,
+                                start = Offset(x1, y1),
+                                end = Offset(x2, y2),
+                                strokeWidth = 5f
+                            )
+                        }
+                        fatPoints.forEachIndexed { idx, p ->
+                            drawCircle(
+                                color = lineColor,
+                                radius = 6f,
+                                center = Offset(idx * stepX, yFor(p.second))
+                            )
+                        }
+                    }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = fatPoints.first().first, fontSize = 9.5.sp, color = Color(0xFF64748B), maxLines = 1, softWrap = false)
+                    Text(text = "총 ${fatPoints.size}회 기록", fontSize = 9.5.sp, color = Color(0xFF64748B), maxLines = 1, softWrap = false)
+                    Text(text = fatPoints.last().first, fontSize = 9.5.sp, color = Color(0xFF64748B), maxLines = 1, softWrap = false)
                 }
             }
         }

@@ -177,16 +177,22 @@ class SlimTrackRepository(
             settingsStore.settingsFlow,
             dao.observeLatestAdvice()
         ) { records, profile, settings, latestAdvice ->
+            val effectiveStart = profile.goalStartDate
+            val validWeights = records.weights.filter { it.dateIso >= effectiveStart.toString() }
+            val validMeals = records.meals.filter { it.dateIso >= effectiveStart.toString() }
+            val validDrinks = records.drinks.filter { it.dateIso >= effectiveStart.toString() }
+            val validExercises = records.exercises.filter { it.dateIso >= effectiveStart.toString() }
+
             val bodyStatus = resolveCurrentBodyStatus(
                 latestInBody = records.inBody,
-                latestWeightLog = records.weights.firstOrNull(),
+                latestWeightLog = validWeights.firstOrNull(),
                 profile = profile,
                 today = today
             )
 
-            val mealsByDate = records.meals.groupBy { it.dateIso }
-            val drinksByDate = records.drinks.groupBy { it.dateIso }
-            val exercisesByDate = records.exercises.groupBy { it.dateIso }
+            val mealsByDate = validMeals.groupBy { it.dateIso }
+            val drinksByDate = validDrinks.groupBy { it.dateIso }
+            val exercisesByDate = validExercises.groupBy { it.dateIso }
 
             val allEvaluations = mutableMapOf<LocalDate, DayEvaluation>()
             var cursor = rangeStart
@@ -208,7 +214,8 @@ class SlimTrackRepository(
                     plan = bodyStatus.dailyPlan,
                     today = today,
                     toleranceKcal = settings.toleranceKcal,
-                    missingMealAsFailure = true
+                    missingMealAsFailure = true,
+                    effectiveStartDate = effectiveStart
                 )
                 allEvaluations[cursor] = eval
                 cursor = cursor.plusDays(1)
@@ -219,17 +226,19 @@ class SlimTrackRepository(
                 plan = bodyStatus.dailyPlan,
                 today = today,
                 toleranceKcal = settings.toleranceKcal,
-                missingMealAsFailure = true
+                missingMealAsFailure = true,
+                effectiveStartDate = effectiveStart
             )
 
             val evalList = allEvaluations.values.toList()
-            val weeklyRollup = CalorieEngine.computeWeeklyRollup(today, evalList, bodyStatus.dailyPlan)
-            val monthlyRollup = CalorieEngine.computeMonthlyRollup(today, evalList, bodyStatus.dailyPlan)
+            val weeklyRollup = CalorieEngine.computeWeeklyRollup(today, evalList, bodyStatus.dailyPlan, effectiveStart)
+            val monthlyRollup = CalorieEngine.computeMonthlyRollup(today, evalList, bodyStatus.dailyPlan, effectiveStart)
 
-            val last7Start = today.minusDays(6)
+            val rawLast7Start = today.minusDays(6)
+            val last7Start = if (effectiveStart.isAfter(rawLast7Start)) effectiveStart else rawLast7Start
             val last7Evals = evalList.filter { !it.date.isBefore(last7Start) && !it.date.isAfter(today) }
 
-            val last7Meals = records.meals.filter {
+            val last7Meals = validMeals.filter {
                 val d = runCatching { LocalDate.parse(it.dateIso) }.getOrNull()
                 d != null && !d.isBefore(last7Start) && !d.isAfter(today)
             }
@@ -239,21 +248,21 @@ class SlimTrackRepository(
                 last7Evals.sumOf { it.exerciseKcal } / last7Evals.size
             } else 0
 
-            val weekDrinks = records.drinks.filter {
+            val weekDrinks = validDrinks.filter {
                 val d = runCatching { LocalDate.parse(it.dateIso) }.getOrNull()
                 d != null && !d.isBefore(weeklyRollup.startDate) && !d.isAfter(today)
             }
             val weeklyAlcoholKcal = weekDrinks.sumOf { it.kcal }
             val weeklyAlcoholDays = weekDrinks.map { it.dateIso }.distinct().size
 
-            val weight7DaysAgo = records.weights
+            val weight7DaysAgo = validWeights
                 .firstOrNull { it.dateIso <= today.minusDays(6).toString() }
                 ?.weightKg?.toDouble()
                 ?: records.inBody?.takeIf { it.dateIso <= today.minusDays(2).toString() }?.weightKg?.toDouble()
 
-            val lastWeightDate = records.weights.firstOrNull()?.dateIso?.let {
+            val lastWeightDate = validWeights.firstOrNull()?.dateIso?.let {
                 runCatching { LocalDate.parse(it) }.getOrNull()
-            }
+            } ?: effectiveStart
             val lastInBodyDate = records.inBody?.dateIso?.let {
                 runCatching { LocalDate.parse(it) }.getOrNull()
             }
@@ -284,9 +293,9 @@ class SlimTrackRepository(
             )
             val liveVerdict = AdviceRuleEngine.evaluate(snapshot)
 
-            val weightDates = records.weights.mapNotNull {
+            val weightDates = validWeights.mapNotNull {
                 runCatching { LocalDate.parse(it.dateIso) }.getOrNull()
-            }.toSet() + listOfNotNull(lastInBodyDate)
+            }.toSet() + listOfNotNull(lastInBodyDate?.takeIf { !it.isBefore(effectiveStart) })
 
             DashboardState(
                 today = today,
@@ -325,14 +334,28 @@ class SlimTrackRepository(
     }
 
     /**
-     * Manual & background sync from Health Connect (exercises + weights).
-     * Deduplicates weight records by hcRecordId.
+     * Purges any daily logs strictly before the user's configured effective start date (goalStartDate).
+     */
+    suspend fun purgeRecordsBeforeStartDate(startDate: LocalDate) {
+        val iso = startDate.toString()
+        dao.deleteMealsBefore(iso)
+        dao.deleteDrinksBefore(iso)
+        dao.deleteExercisesBefore(iso)
+        dao.deleteWeightLogsBefore(iso)
+        dao.deleteAdviceBefore(iso)
+    }
+
+    /**
+     * Manual & background sync from Health Connect (exercises + weights + body fat).
+     * Respects effective start date (goalStartDate) and deduplicates weight records by hcRecordId.
      */
     suspend fun syncFromHealthConnect(
         today: LocalDate = LocalDate.now(),
         daysBack: Long = 30
     ): HealthSyncSummary {
-        val startDate = today.minusDays(daysBack)
+        val profile = profileStore.readBackupProfile()
+        val rawStart = today.minusDays(daysBack)
+        val startDate = if (profile.goalStartDate.isAfter(rawStart)) profile.goalStartDate else rawStart
         val exercises = healthConnectRepository.readExercises(startDate, today)
         if (exercises.isNotEmpty()) {
             dao.upsertExercises(exercises)
@@ -352,9 +375,9 @@ class SlimTrackRepository(
 
         val latestW = dao.getLatestWeightLog()
         val msg = if (exercises.isEmpty() && hcWeights.isEmpty()) {
-            "Health Connect에서 가져올 새 운동/체중 기록이 없거나 권한이 필요합니다."
+            "Health Connect에서 가져올 새 운동/체중/체지방 기록이 없거나 권한이 필요합니다."
         } else {
-            "운동 ${exercises.size}건, 체중 ${hcWeights.size}건(신규 ${weightInserted}건) 동기화 완료"
+            "Health Connect 동기화 완료: 운동 ${exercises.size}건, 체중·체지방 ${hcWeights.size}건(신규 ${weightInserted}건)"
         }
         return HealthSyncSummary(
             exercisesSynced = exercises.size,

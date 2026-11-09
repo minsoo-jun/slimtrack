@@ -273,13 +273,23 @@ class MainViewModel(
 
     fun deleteMeal(meal: MealEntity) {
         viewModelScope.launch {
-            repository.dao.deleteMeal(meal)
+            repository.dao.deleteMealById(meal.id)
+            val label = runCatching { MealType.valueOf(meal.mealType).labelKo }.getOrDefault(meal.mealType)
+            _statusMessage.value = "🗑 [$label] ${meal.totalKcal}kcal 식단 기록이 삭제되었습니다."
         }
     }
 
     fun deleteDrink(drink: DrinkEntity) {
         viewModelScope.launch {
-            repository.dao.deleteDrink(drink)
+            repository.dao.deleteDrinkById(drink.id)
+            _statusMessage.value = "🗑 ${drink.displayLabel} ${drink.kcal}kcal 음주 기록이 삭제되었습니다."
+        }
+    }
+
+    fun deleteExercise(exercise: ExerciseEntity) {
+        viewModelScope.launch {
+            repository.dao.deleteExerciseByHcId(exercise.hcId)
+            _statusMessage.value = "🗑 [${exercise.title}] 운동 기록이 삭제되었습니다."
         }
     }
 
@@ -322,9 +332,12 @@ class MainViewModel(
         }
     }
 
-    fun saveUserProfile(profile: UserProfile) {
+    fun saveUserProfile(profile: UserProfile, purgeOldData: Boolean = true) {
         viewModelScope.launch {
             repository.profileStore.saveProfile(profile)
+            if (purgeOldData) {
+                repository.purgeRecordsBeforeStartDate(profile.goalStartDate)
+            }
         }
     }
 

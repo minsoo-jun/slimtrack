@@ -176,4 +176,33 @@ class SlimTrackDomainTest {
         val dailyDelay = AlarmScheduler.computeDelayUntilNext2100(monMorning)
         assertThat(dailyDelay.toHours()).isEqualTo(16L)
     }
+
+    @Test
+    fun `effectiveStartDate marks dates before start date as GRAY and excludes them from rollups`() {
+        val today = LocalDate.of(2026, 11, 9)
+        val effectiveStart = LocalDate.of(2026, 11, 9)
+        val plan = CalorieEngine.dailyPlan(1834, 1.2, 682)
+
+        val dayBeforeStart = CalorieEngine.evaluateDay(
+            input = DayRecordInput(LocalDate.of(2026, 11, 8), 0, 0, 0, 0),
+            plan = plan,
+            today = today,
+            toleranceKcal = 150,
+            missingMealAsFailure = true,
+            effectiveStartDate = effectiveStart
+        )
+        assertThat(dayBeforeStart.statusColor).isEqualTo(DayStatusColor.GRAY)
+        assertThat(dayBeforeStart.isMissingMealFailure).isFalse()
+
+        val todayEval = CalorieEngine.evaluateDay(
+            input = DayRecordInput(today, 1055, 0, 299, 1),
+            plan = plan,
+            today = today,
+            toleranceKcal = 150,
+            missingMealAsFailure = true,
+            effectiveStartDate = effectiveStart
+        )
+        assertThat(todayEval.statusColor).isEqualTo(DayStatusColor.GREEN)
+        assertThat(todayEval.remainingIntakeKcal).isEqualTo(763) // 1834 + 299 - 315 - 1055 = 763
+    }
 }

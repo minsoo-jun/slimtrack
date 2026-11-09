@@ -221,12 +221,12 @@ fun SlimTrackRoot(
                     onPrevMonth = viewModel::prevMonth,
                     onNextMonth = viewModel::nextMonth,
                     onSelectDate = viewModel::selectDate,
-                    onQuickAddWeight = { d, w -> viewModel.addManualWeight(d, w) },
                     onSyncHealthConnect = viewModel::syncHealthConnect,
                     onNavigateToMealTab = { activeTab = MainTab.MEAL },
                     onNavigateToCoachTab = { activeTab = MainTab.COACH },
                     onDeleteMeal = viewModel::deleteMeal,
                     onDeleteDrink = viewModel::deleteDrink,
+                    onDeleteExercise = viewModel::deleteExercise,
                     modifier = Modifier.padding(innerPadding)
                 )
 
@@ -238,6 +238,7 @@ fun SlimTrackRoot(
                     stagedConfidence = stagedConfidence,
                     isAnalyzingPhoto = isAnalyzingPhoto,
                     analysisStatusMessage = statusMessage,
+                    todayMeals = selectedDateMeals,
                     todayDrinks = selectedDateDrinks,
                     todayExercises = selectedDateExercises,
                     onSelectMealType = viewModel::selectMealType,
@@ -253,21 +254,23 @@ fun SlimTrackRoot(
                     onRemoveStagedItem = viewModel::removeStagedItem,
                     onAddManualFoodItem = viewModel::addManualStagedItem,
                     onSaveMeal = viewModel::saveStagedMeal,
+                    onDeleteMeal = viewModel::deleteMeal,
                     onAddDrink = viewModel::addDrink,
                     onDeleteDrink = viewModel::deleteDrink,
                     onSyncHealthConnectExercises = viewModel::syncHealthConnect,
                     onAddManualExercise = viewModel::addManualExercise,
+                    onDeleteExercise = viewModel::deleteExercise,
                     modifier = Modifier.padding(innerPadding)
                 )
 
                 MainTab.BODY -> BodyAndStageScreen(
                     today = dash.today,
+                    effectiveStartDate = dash.profile.goalStartDate,
                     bodyStatus = dash.bodyStatus,
                     weightLogs = allWeightLogs,
                     inBodyHistory = allInBodyRecords,
                     isAnalyzingInBody = isAnalyzingInBody,
                     syncStatusMessage = statusMessage,
-                    onAddManualWeight = viewModel::addManualWeight,
                     onManualSyncHealthConnectWeight = viewModel::syncHealthConnect,
                     onPickInBodyScreenshot = {
                         pickInBodyPhotoLauncher.launch(

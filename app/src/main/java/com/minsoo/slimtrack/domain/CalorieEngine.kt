@@ -45,7 +45,14 @@ data class DayEvaluation(
     val netBalanceKcal: Int,
     val statusColor: DayStatusColor,
     val isMissingMealFailure: Boolean
-)
+) {
+    /**
+     * Remaining calories that can still be consumed today without exceeding the target deficit.
+     * Positive value means remaining allowance (displayed WITHOUT a '+' sign, e.g., "713").
+     * Negative value means calories exceeded (displayed with '-', e.g., "-240").
+     */
+    val remainingIntakeKcal: Int get() = netBalanceKcal
+}
 
 data class PeriodRollup(
     val startDate: LocalDate,
@@ -134,9 +141,10 @@ object CalorieEngine {
         plan: DailyPlan,
         today: LocalDate,
         toleranceKcal: Int = DEFAULT_TOLERANCE_KCAL,
-        missingMealAsFailure: Boolean = true
+        missingMealAsFailure: Boolean = true,
+        effectiveStartDate: LocalDate? = null
     ): DayEvaluation {
-        if (input.date.isAfter(today)) {
+        if (input.date.isAfter(today) || (effectiveStartDate != null && input.date.isBefore(effectiveStartDate))) {
             return DayEvaluation(
                 date = input.date,
                 plan = plan,
@@ -207,9 +215,15 @@ object CalorieEngine {
     fun computeWeeklyRollup(
         today: LocalDate,
         evaluations: List<DayEvaluation>,
-        todayPlan: DailyPlan
+        todayPlan: DailyPlan,
+        effectiveStartDate: LocalDate? = null
     ): PeriodRollup {
-        val weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        val rawWeekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        val weekStart = if (effectiveStartDate != null && effectiveStartDate.isAfter(rawWeekStart)) {
+            effectiveStartDate
+        } else {
+            rawWeekStart
+        }
         val weekEnd = today.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY))
         return computePeriodRollup(weekStart, weekEnd, today, evaluations, todayPlan)
     }
@@ -217,10 +231,16 @@ object CalorieEngine {
     fun computeMonthlyRollup(
         today: LocalDate,
         evaluations: List<DayEvaluation>,
-        todayPlan: DailyPlan
+        todayPlan: DailyPlan,
+        effectiveStartDate: LocalDate? = null
     ): PeriodRollup {
         val ym = YearMonth.from(today)
-        val monthStart = ym.atDay(1)
+        val rawMonthStart = ym.atDay(1)
+        val monthStart = if (effectiveStartDate != null && effectiveStartDate.isAfter(rawMonthStart)) {
+            effectiveStartDate
+        } else {
+            rawMonthStart
+        }
         val monthEnd = ym.atEndOfMonth()
         return computePeriodRollup(monthStart, monthEnd, today, evaluations, todayPlan)
     }

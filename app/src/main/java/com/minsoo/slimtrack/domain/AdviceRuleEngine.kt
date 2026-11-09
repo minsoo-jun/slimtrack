@@ -147,9 +147,9 @@ object AdviceRuleEngine {
         if (snapshot.weeklyRollup.cumulativeBalanceKcal < 0) {
             violations += AdviceViolation(
                 code = "WEEKLY_DEFICIT_SHORTFALL",
-                titleKo = "주간 누적 칼로리 적자 미달 (${snapshot.weeklyRollup.cumulativeBalanceKcal}kcal)",
+                titleKo = "주간 누적 칼로리 목표 미달 (${snapshot.weeklyRollup.cumulativeBalanceKcal}kcal)",
                 severity = ViolationSeverity.MEDIUM,
-                detailKo = "이번 주 누적 수지가 ${snapshot.weeklyRollup.cumulativeBalanceKcal}kcal입니다. 남은 ${snapshot.weeklyRollup.remainingDaysInPeriod}일 동안 하루 ${snapshot.weeklyRollup.recoveryPerDayKcal}kcal씩 만회해야 주간 목표를 맞춥니다."
+                detailKo = "이번 주 누적 칼로리 수치가 ${snapshot.weeklyRollup.cumulativeBalanceKcal}kcal입니다. 남은 ${snapshot.weeklyRollup.remainingDaysInPeriod}일 동안 하루 ${snapshot.weeklyRollup.recoveryPerDayKcal}kcal씩 만회해야 주간 목표를 맞춥니다."
             )
         }
 
@@ -336,7 +336,7 @@ object AdviceRuleEngine {
             snapshot.stageResult.remainingKgToActiveStage
         )
         lines += String.format(
-            "주간 누적 수지 %+dkcal, 월간 누적 수지 %+dkcal (기초대사량 %dkcal, 일일 권장 섭취 %dkcal, 일일 운동 목표 %dkcal).",
+            "주간 누적 수치 %+dkcal, 월간 누적 수치 %+dkcal (기초대사량 %dkcal, 일일 권장 섭취 %dkcal, 일일 운동 목표 %dkcal).",
             snapshot.weeklyRollup.cumulativeBalanceKcal,
             snapshot.monthlyRollup.cumulativeBalanceKcal,
             snapshot.bmrKcal,

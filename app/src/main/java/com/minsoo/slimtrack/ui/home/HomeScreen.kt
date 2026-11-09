@@ -7,7 +7,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,12 +27,9 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.LocalBar
-import androidx.compose.material.icons.filled.MonitorWeight
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -41,15 +37,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -83,7 +73,6 @@ import com.minsoo.slimtrack.ui.theme.StatusRedText
 import com.minsoo.slimtrack.ui.theme.StatusYellowBg
 import com.minsoo.slimtrack.ui.theme.StatusYellowBorder
 import com.minsoo.slimtrack.ui.theme.StatusYellowText
-import com.minsoo.slimtrack.ui.theme.TealPrimary
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -99,16 +88,14 @@ fun HomeScreen(
     onPrevMonth: () -> Unit,
     onNextMonth: () -> Unit,
     onSelectDate: (LocalDate) -> Unit,
-    onQuickAddWeight: (LocalDate, Float) -> Unit,
     onSyncHealthConnect: () -> Unit,
     onNavigateToMealTab: () -> Unit,
     onNavigateToCoachTab: () -> Unit,
     onDeleteMeal: (MealEntity) -> Unit,
     onDeleteDrink: (DrinkEntity) -> Unit,
+    onDeleteExercise: (ExerciseEntity) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var showWeightDialog by remember { mutableStateOf(false) }
-
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -116,10 +103,9 @@ fun HomeScreen(
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // 1. Top Stage & Current Body Summary Banner
+        // 1. Top Stage & Current Body Summary Banner ("1단계 목표")
         StageHeaderCard(
             dashboard = dashboard,
-            onQuickWeightClick = { showWeightDialog = true },
             onSyncClick = onSyncHealthConnect
         )
 
@@ -139,6 +125,21 @@ fun HomeScreen(
                 )
             }
         }
+
+        // 2. Daily Calorie Card placed IMMEDIATELY below "1단계 목표"!
+        val selectedEval = dashboard.monthEvaluations[selectedDate] ?: dashboard.todayEvaluation
+        SelectedDateDetailCard(
+            date = selectedDate,
+            effectiveStartDate = dashboard.profile.goalStartDate,
+            evaluation = selectedEval,
+            meals = selectedDateMeals,
+            drinks = selectedDateDrinks,
+            exercises = selectedDateExercises,
+            onAddMealClick = onNavigateToMealTab,
+            onDeleteMeal = onDeleteMeal,
+            onDeleteDrink = onDeleteDrink,
+            onDeleteExercise = onDeleteExercise
+        )
 
         // Skeletal Muscle Loss Warning Banner
         if (dashboard.bodyStatus.stageResult.skeletalMuscleLossWarning) {
@@ -172,36 +173,24 @@ fun HomeScreen(
             }
         }
 
-        // 2. Weekly & Monthly Cumulative +/- Rollup & Recovery Card
+        // 3. Weekly & Monthly Cumulative Rollup & Recovery Card
         RollupSummaryRow(
             weekly = dashboard.weeklyRollup,
             monthly = dashboard.monthlyRollup,
             baseExerciseTarget = dashboard.bodyStatus.dailyPlan.exerciseTarget
         )
 
-        // 3. Monthly Goal Calendar
+        // 4. Monthly Goal Calendar
         CalendarCard(
             yearMonth = currentYearMonth,
             today = dashboard.today,
             selectedDate = selectedDate,
+            effectiveStartDate = dashboard.profile.goalStartDate,
             evaluations = dashboard.monthEvaluations,
             weightLoggedDates = dashboard.weightloggedDates,
             onPrevMonth = onPrevMonth,
             onNextMonth = onNextMonth,
             onSelectDate = onSelectDate
-        )
-
-        // 4. Selected Date Balance Breakdown & Records
-        val selectedEval = dashboard.monthEvaluations[selectedDate] ?: dashboard.todayEvaluation
-        SelectedDateDetailCard(
-            date = selectedDate,
-            evaluation = selectedEval,
-            meals = selectedDateMeals,
-            drinks = selectedDateDrinks,
-            exercises = selectedDateExercises,
-            onAddMealClick = onNavigateToMealTab,
-            onDeleteMeal = onDeleteMeal,
-            onDeleteDrink = onDeleteDrink
         )
 
         // 5. Strict Coach Advice Card
@@ -210,24 +199,11 @@ fun HomeScreen(
             onOpenCoachTab = onNavigateToCoachTab
         )
     }
-
-    if (showWeightDialog) {
-        QuickWeightInputDialog(
-            date = selectedDate,
-            initialWeight = dashboard.bodyStatus.currentWeightKg.toFloat(),
-            onDismiss = { showWeightDialog = false },
-            onSave = { w ->
-                onQuickAddWeight(selectedDate, w)
-                showWeightDialog = false
-            }
-        )
-    }
 }
 
 @Composable
 private fun StageHeaderCard(
     dashboard: DashboardState,
-    onQuickWeightClick: () -> Unit,
     onSyncClick: () -> Unit
 ) {
     val body = dashboard.bodyStatus
@@ -254,7 +230,7 @@ private fun StageHeaderCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "남은 감량 ${String.format("%.1fkg", body.stageResult.remainingKgToActiveStage)} · 마감 ${body.stageResult.deadlineForActiveStage}",
+                        text = "남은 감량 ${String.format("%.1fkg", body.stageResult.remainingKgToActiveStage)} · 유효 시작일 ${dashboard.profile.goalStartDate}",
                         fontSize = 11.sp,
                         color = Color(0xFF475569),
                         maxLines = 1,
@@ -263,51 +239,30 @@ private fun StageHeaderCard(
                     )
                 }
                 Spacer(Modifier.width(6.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.clickable(onClick = onSyncClick)
                 ) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier.clickable(onClick = onQuickWeightClick)
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.MonitorWeight,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                text = "체중입력",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                maxLines = 1,
-                                softWrap = false
-                            )
-                        }
-                    }
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = CircleShape,
-                        modifier = Modifier
-                            .size(30.dp)
-                            .clickable(onClick = onSyncClick)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                Icons.Default.Sync,
-                                contentDescription = "동기화",
-                                modifier = Modifier.size(16.dp),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
+                        Icon(
+                            Icons.Default.Sync,
+                            contentDescription = "Health 동기화",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "Health 동기화",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            maxLines = 1,
+                            softWrap = false
+                        )
                     }
                 }
             }
@@ -392,14 +347,14 @@ private fun RollupSummaryRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         RollupCard(
-            title = "주간 누적 (월~일)",
+            title = "주간 누적 (유효일~일)",
             cumulative = weekly.cumulativeBalanceKcal,
             remainingDays = weekly.remainingDaysInPeriod,
             recoveryPerDay = weekly.recoveryPerDayKcal,
             modifier = Modifier.weight(1f)
         )
         RollupCard(
-            title = "월간 누적",
+            title = "월간 누적 (유효일~말일)",
             cumulative = monthly.cumulativeBalanceKcal,
             remainingDays = monthly.remainingDaysInPeriod,
             recoveryPerDay = monthly.recoveryPerDayKcal,
@@ -460,8 +415,8 @@ private fun RollupCard(
                 softWrap = false
             )
             Text(
-                text = String.format("%+d kcal", cumulative),
-                fontSize = 16.sp,
+                text = if (cumulative >= 0) "${cumulative} kcal 여유" else "${cumulative} kcal 초과",
+                fontSize = 15.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = fg,
                 maxLines = 1,
@@ -488,6 +443,7 @@ private fun CalendarCard(
     yearMonth: YearMonth,
     today: LocalDate,
     selectedDate: LocalDate,
+    effectiveStartDate: LocalDate,
     evaluations: Map<LocalDate, DayEvaluation>,
     weightLoggedDates: Set<LocalDate>,
     onPrevMonth: () -> Unit,
@@ -509,11 +465,12 @@ private fun CalendarCard(
                     Icon(Icons.Default.ChevronLeft, contentDescription = "이전 달")
                 }
                 Text(
-                    text = "${yearMonth.year}년 ${yearMonth.monthValue}월 목표 캘린더",
-                    fontSize = 14.sp,
+                    text = "${yearMonth.year}년 ${yearMonth.monthValue}월 목표 캘린더 (시작일: $effectiveStartDate)",
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
-                    softWrap = false
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
                 IconButton(onClick = onNextMonth, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.Default.ChevronRight, contentDescription = "다음 달")
@@ -525,10 +482,10 @@ private fun CalendarCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                LegendChip("🟢 달성", StatusGreenBg, StatusGreenText)
+                LegendChip("🟢 달성(잔여)", StatusGreenBg, StatusGreenText)
                 LegendChip("🟡 허용(-150)", StatusYellowBg, StatusYellowText)
                 LegendChip("🔴 초과/✕미기록", StatusRedBg, StatusRedText)
-                LegendChip("⚪ 미래", StatusGrayBg, StatusGrayText)
+                LegendChip("⚪ 시작전/미래", StatusGrayBg, StatusGrayText)
             }
 
             val weekDays = listOf("월", "화", "수", "목", "금", "토", "일")
@@ -599,7 +556,10 @@ private fun LegendChip(text: String, bg: Color, fg: Color) {
 }
 
 /**
- * Calendar Day Cell rendered with Canvas status indicator so text is never clipped vertically.
+ * Calendar Day Cell:
+ * - Positive remaining intake is displayed WITHOUT a '+' sign (e.g. "713").
+ * - Exceeded intake is displayed with '-' (e.g. "-240").
+ * - Missing meal on valid dates (>= effectiveStartDate) draws a Canvas '✕' icon.
  */
 @Composable
 private fun CalendarDayCell(
@@ -674,7 +634,6 @@ private fun CalendarDayCell(
 
             if (evaluation != null && color != DayStatusColor.GRAY) {
                 if (evaluation.isMissingMealFailure) {
-                    // Graphic X icon drawn via Canvas so Korean text "미기록" never clips
                     Canvas(modifier = Modifier.size(11.dp)) {
                         val s = size.minDimension
                         drawCircle(color = StatusRedBorder.copy(alpha = 0.2f), radius = s / 2f)
@@ -695,8 +654,10 @@ private fun CalendarDayCell(
                         )
                     }
                 } else {
+                    // No '+' prefix for positive remaining calories!
+                    val rem = evaluation.remainingIntakeKcal
                     Text(
-                        text = String.format("%+d", evaluation.netBalanceKcal),
+                        text = "$rem",
                         fontSize = 9.sp,
                         lineHeight = 10.sp,
                         fontWeight = FontWeight.ExtraBold,
@@ -716,22 +677,23 @@ private fun CalendarDayCell(
 @Composable
 private fun SelectedDateDetailCard(
     date: LocalDate,
+    effectiveStartDate: LocalDate,
     evaluation: DayEvaluation,
     meals: List<MealEntity>,
     drinks: List<DrinkEntity>,
     exercises: List<ExerciseEntity>,
     onAddMealClick: () -> Unit,
     onDeleteMeal: (MealEntity) -> Unit,
-    onDeleteDrink: (DrinkEntity) -> Unit
+    onDeleteDrink: (DrinkEntity) -> Unit,
+    onDeleteExercise: (ExerciseEntity) -> Unit
 ) {
-    val plan = evaluation.plan
+    val rem = evaluation.remainingIntakeKcal
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            // Header row: Left title (weight 1f) + Right compact pill button (never squished!)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -739,21 +701,29 @@ private fun SelectedDateDetailCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "📅 $date 일일 칼로리 수지",
+                        text = "📅 $date 일일 칼로리 수치",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis
                     )
+                    val subtitleText = when {
+                        date.isBefore(effectiveStartDate) -> "⚪ 기록 유효 시작일($effectiveStartDate) 이전 날짜"
+                        evaluation.isMissingMealFailure -> "🔴 식사 미기록 (실패 · 오늘 섭취 가능 ${evaluation.plan.recommendedIntake} kcal)"
+                        rem >= 0 -> "🟢 오늘 앞으로 ${rem} kcal 더 섭취 가능"
+                        else -> "🔴 오늘 허용 칼로리 ${-rem} kcal 초과 섭취"
+                    }
+                    val subtitleColor = when {
+                        date.isBefore(effectiveStartDate) -> StatusGrayText
+                        evaluation.statusColor == DayStatusColor.RED -> StatusRedText
+                        evaluation.statusColor == DayStatusColor.YELLOW -> StatusYellowText
+                        else -> StatusGreenText
+                    }
                     Text(
-                        text = if (evaluation.isMissingMealFailure) {
-                            "🔴 식사 미기록 (실패 · 21:00 경고 알람)"
-                        } else {
-                            String.format("일일 수지 %+d kcal (목표 적자 -%dkcal)", evaluation.netBalanceKcal, plan.deficitTarget)
-                        },
+                        text = subtitleText,
                         fontSize = 11.5.sp,
-                        color = if (evaluation.statusColor == DayStatusColor.RED) StatusRedText else StatusGreenText,
+                        color = subtitleColor,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         softWrap = false,
@@ -778,7 +748,7 @@ private fun SelectedDateDetailCard(
                         )
                         Spacer(Modifier.width(3.dp))
                         Text(
-                            text = "기록 추가",
+                            text = "식단 입력",
                             color = Color.White,
                             fontSize = 11.5.sp,
                             fontWeight = FontWeight.Bold,
@@ -789,21 +759,22 @@ private fun SelectedDateDetailCard(
                 }
             }
 
-            // Visual Canvas Calorie Gauge + 2x2 Grid (Zero line-wrap!)
+            // Visual Canvas Calorie Gauge + 4-Column Metric Grid
             CalorieBalanceGraphicBox(evaluation = evaluation)
 
             if (meals.isEmpty() && drinks.isEmpty() && exercises.isEmpty()) {
                 Text(
-                    text = "등록된 식사·술·운동 기록이 없습니다.",
+                    text = "등록된 식사·술·운동 기록이 없습니다. 우측 상단 [식단 입력]을 눌러 추가하세요.",
                     fontSize = 11.5.sp,
                     color = Color(0xFF64748B),
                     maxLines = 1,
-                    softWrap = false
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
             } else {
                 if (meals.isNotEmpty()) {
                     Text(
-                        text = "🍽 식사 & 안주 (${meals.sumOf { it.totalKcal }}kcal)",
+                        text = "🍽 식사 & 안주 (${meals.size}건 · 총 ${meals.sumOf { it.totalKcal }}kcal)",
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
                         maxLines = 1,
@@ -811,24 +782,40 @@ private fun SelectedDateDetailCard(
                     )
                     meals.forEach { m ->
                         val typeLabel = runCatching { MealType.valueOf(m.mealType).labelKo }.getOrDefault(m.mealType)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                Icon(Icons.Default.Restaurant, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
-                                Spacer(Modifier.width(5.dp))
-                                Text(
-                                    text = "[$typeLabel] ${m.totalKcal}kcal (단백질 ${m.proteinGrams.toInt()}g) ${m.notes}",
-                                    fontSize = 11.5.sp,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            IconButton(onClick = { onDeleteMeal(m) }, modifier = Modifier.size(26.dp)) {
-                                Icon(Icons.Default.Delete, contentDescription = "삭제", modifier = Modifier.size(15.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Restaurant,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp),
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Spacer(Modifier.width(5.dp))
+                                    Text(
+                                        text = "[$typeLabel] ${m.totalKcal}kcal (단백질 ${m.proteinGrams.toInt()}g) ${m.notes}",
+                                        fontSize = 11.5.sp,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                Spacer(Modifier.width(6.dp))
+                                DeletePillButton(onClick = { onDeleteMeal(m) })
                             }
                         }
                     }
@@ -844,24 +831,35 @@ private fun SelectedDateDetailCard(
                         softWrap = false
                     )
                     drinks.forEach { d ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                Icon(Icons.Default.LocalBar, contentDescription = null, modifier = Modifier.size(14.dp), tint = StatusRedBorder)
-                                Spacer(Modifier.width(5.dp))
-                                Text(
-                                    text = "${d.displayLabel} ${d.volumeMl}ml (${d.abvPct}%) — ${d.kcal}kcal",
-                                    fontSize = 11.5.sp,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            IconButton(onClick = { onDeleteDrink(d) }, modifier = Modifier.size(26.dp)) {
-                                Icon(Icons.Default.Delete, contentDescription = "삭제", modifier = Modifier.size(15.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.LocalBar, contentDescription = null, modifier = Modifier.size(14.dp), tint = StatusRedBorder)
+                                    Spacer(Modifier.width(5.dp))
+                                    Text(
+                                        text = "${d.displayLabel} ${d.volumeMl}ml (${d.abvPct}%) — ${d.kcal}kcal",
+                                        fontSize = 11.5.sp,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                Spacer(Modifier.width(6.dp))
+                                DeletePillButton(onClick = { onDeleteDrink(d) })
                             }
                         }
                     }
@@ -870,23 +868,43 @@ private fun SelectedDateDetailCard(
                 if (exercises.isNotEmpty()) {
                     HorizontalDivider()
                     Text(
-                        text = "🏃 운동 소모 (+${exercises.sumOf { it.activeKcal }}kcal)",
+                        text = "🏃 운동 소모 (${exercises.sumOf { it.activeKcal }}kcal)",
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
                         maxLines = 1,
                         softWrap = false
                     )
                     exercises.forEach { ex ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.FitnessCenter, contentDescription = null, modifier = Modifier.size(14.dp), tint = StatusGreenBorder)
-                            Spacer(Modifier.width(5.dp))
-                            Text(
-                                text = "[${ex.source}] ${ex.title} (${ex.durationMinutes}분) — +${ex.activeKcal}kcal",
-                                fontSize = 11.5.sp,
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(Icons.Default.FitnessCenter, contentDescription = null, modifier = Modifier.size(14.dp), tint = StatusGreenBorder)
+                                    Spacer(Modifier.width(5.dp))
+                                    Text(
+                                        text = "[${ex.source}] ${ex.title} (${ex.durationMinutes}분) — ${ex.activeKcal}kcal",
+                                        fontSize = 11.5.sp,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                                Spacer(Modifier.width(6.dp))
+                                DeletePillButton(onClick = { onDeleteExercise(ex) })
+                            }
                         }
                     }
                 }
@@ -896,15 +914,48 @@ private fun SelectedDateDetailCard(
 }
 
 @Composable
+private fun DeletePillButton(onClick: () -> Unit) {
+    Surface(
+        color = StatusRedBg,
+        shape = RoundedCornerShape(6.dp),
+        modifier = Modifier
+            .border(1.dp, StatusRedBorder, RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = "삭제",
+                tint = StatusRedText,
+                modifier = Modifier.size(13.dp)
+            )
+            Spacer(Modifier.width(2.dp))
+            Text(
+                text = "삭제",
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = StatusRedText,
+                maxLines = 1,
+                softWrap = false
+            )
+        }
+    }
+}
+
+@Composable
 private fun CalorieBalanceGraphicBox(evaluation: DayEvaluation) {
     val plan = evaluation.plan
     val allowedBudget = (plan.recommendedIntake + evaluation.exerciseKcal - plan.exerciseTarget).coerceAtLeast(plan.bmr)
     val intakeRatio = (evaluation.totalIntakeKcal.toFloat() / allowedBudget.coerceAtLeast(1)).coerceIn(0f, 1.25f)
-    val barColor = when (evaluation.statusColor) {
-        DayStatusColor.GREEN -> StatusGreenBorder
-        DayStatusColor.YELLOW -> StatusYellowBorder
-        DayStatusColor.RED -> StatusRedBorder
-        DayStatusColor.GRAY -> StatusGrayBorder
+    val rem = evaluation.remainingIntakeKcal
+    val barColor = when {
+        evaluation.statusColor == DayStatusColor.RED && !evaluation.isMissingMealFailure -> StatusRedBorder
+        evaluation.statusColor == DayStatusColor.YELLOW -> StatusYellowBorder
+        rem >= 0 -> StatusGreenBorder
+        else -> StatusRedBorder
     }
 
     Surface(
@@ -923,7 +974,7 @@ private fun CalorieBalanceGraphicBox(evaluation: DayEvaluation) {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "섭취 ${evaluation.totalIntakeKcal} / 허용예산 ${allowedBudget} kcal",
+                        text = "실제 섭취 ${evaluation.totalIntakeKcal} / 오늘 허용량 ${allowedBudget} kcal",
                         fontSize = 10.5.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color(0xFF334155),
@@ -931,10 +982,10 @@ private fun CalorieBalanceGraphicBox(evaluation: DayEvaluation) {
                         softWrap = false
                     )
                     Text(
-                        text = String.format("오늘 수지 %+d kcal", evaluation.netBalanceKcal),
+                        text = if (rem >= 0) "남은 섭취 가능 ${rem} kcal" else "${-rem} kcal 초과",
                         fontSize = 10.5.sp,
                         fontWeight = FontWeight.ExtraBold,
-                        color = barColor,
+                        color = if (rem >= 0) StatusGreenText else StatusRedText,
                         maxLines = 1,
                         softWrap = false
                     )
@@ -966,15 +1017,21 @@ private fun CalorieBalanceGraphicBox(evaluation: DayEvaluation) {
                 }
             }
 
-            // 4-column single-line metric tiles (unit separated so "kcal" NEVER wraps!)
+            // 4-column single-line metric tiles (4th tile = "섭취 가능", NO '+' sign for positive!)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 BalanceTile("권장 섭취", "${plan.recommendedIntake}", "kcal", Color(0xFF0F172A), Modifier.weight(1f))
                 BalanceTile("실제 섭취", "${evaluation.totalIntakeKcal}", "kcal", Color(0xFF0F172A), Modifier.weight(1f))
-                BalanceTile("운동(목표${plan.exerciseTarget})", "+${evaluation.exerciseKcal}", "kcal", StatusGreenText, Modifier.weight(1f))
-                BalanceTile("오늘 ±", String.format("%+d", evaluation.netBalanceKcal), "kcal", barColor, Modifier.weight(1f))
+                BalanceTile("운동(목표${plan.exerciseTarget})", "${evaluation.exerciseKcal}", "kcal", StatusGreenText, Modifier.weight(1f))
+                BalanceTile(
+                    label = if (rem >= 0) "섭취 가능" else "초과 칼로리",
+                    numberText = "$rem",
+                    unit = "kcal",
+                    valueColor = if (rem >= 0) StatusGreenText else StatusRedText,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
     }
@@ -1049,7 +1106,6 @@ private fun StrictCoachPreviewCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Graphic Grade Badge Circle
                 Box(
                     modifier = Modifier
                         .size(28.dp)
@@ -1096,46 +1152,4 @@ private fun StrictCoachPreviewCard(
             }
         }
     }
-}
-
-@Composable
-private fun QuickWeightInputDialog(
-    date: LocalDate,
-    initialWeight: Float,
-    onDismiss: () -> Unit,
-    onSave: (Float) -> Unit
-) {
-    var weightText by remember { mutableStateOf(String.format("%.1f", initialWeight)) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("⚖ $date 체중 수동 입력", fontSize = 15.sp, fontWeight = FontWeight.Bold) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("아침 기상 직후 공복 측정을 권장합니다.", fontSize = 12.sp)
-                OutlinedTextField(
-                    value = weightText,
-                    onValueChange = { weightText = it },
-                    label = { Text("체중 (kg)") },
-                    singleLine = true
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val w = weightText.toFloatOrNull()
-                    if (w != null && w in 35f..250f) {
-                        onSave(w)
-                    }
-                }
-            ) {
-                Text("저장")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("취소")
-            }
-        }
-    )
 }
