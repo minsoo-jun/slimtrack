@@ -208,6 +208,11 @@ private fun StageHeaderCard(
 ) {
     val body = dashboard.bodyStatus
     val stage = body.stageResult.activeStageSpec
+    val daysLeft = java.time.temporal.ChronoUnit.DAYS.between(
+        dashboard.today,
+        body.stageResult.deadlineForActiveStage
+    ).toInt().coerceAtLeast(0)
+
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -219,7 +224,7 @@ private fun StageHeaderCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         text = "🎯 ${stage.number}단계 목표 (${stage.targetWeightMinKg.toInt()}~${stage.targetWeightMaxKg.toInt()}kg · 내장지방 ${stage.targetVisceralFatMax}Lv)",
                         fontSize = 14.sp,
@@ -230,9 +235,10 @@ private fun StageHeaderCard(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = "남은 감량 ${String.format("%.1fkg", body.stageResult.remainingKgToActiveStage)} · 유효 시작일 ${dashboard.profile.goalStartDate}",
+                        text = "🔥 마감 D-${daysLeft} (${daysLeft}일 남음 · ${body.stageResult.deadlineForActiveStage}) · 남은 감량 ${String.format("%.1fkg", body.stageResult.remainingKgToActiveStage)}",
                         fontSize = 11.sp,
-                        color = Color(0xFF475569),
+                        fontWeight = FontWeight.Bold,
+                        color = StatusRedText,
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis
@@ -699,7 +705,7 @@ private fun SelectedDateDetailCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
                         text = "📅 $date 일일 칼로리 수치",
                         fontSize = 14.sp,
@@ -714,21 +720,40 @@ private fun SelectedDateDetailCard(
                         rem >= 0 -> "🟢 오늘 앞으로 ${rem} kcal 더 섭취 가능"
                         else -> "🔴 오늘 허용 칼로리 ${-rem} kcal 초과 섭취"
                     }
+                    val pillBg = when {
+                        date.isBefore(effectiveStartDate) -> StatusGrayBg
+                        evaluation.statusColor == DayStatusColor.RED -> StatusRedBg
+                        evaluation.statusColor == DayStatusColor.YELLOW -> StatusYellowBg
+                        else -> StatusGreenBg
+                    }
+                    val pillBorder = when {
+                        date.isBefore(effectiveStartDate) -> StatusGrayBorder
+                        evaluation.statusColor == DayStatusColor.RED -> StatusRedBorder
+                        evaluation.statusColor == DayStatusColor.YELLOW -> StatusYellowBorder
+                        else -> StatusGreenBorder
+                    }
                     val subtitleColor = when {
                         date.isBefore(effectiveStartDate) -> StatusGrayText
                         evaluation.statusColor == DayStatusColor.RED -> StatusRedText
                         evaluation.statusColor == DayStatusColor.YELLOW -> StatusYellowText
                         else -> StatusGreenText
                     }
-                    Text(
-                        text = subtitleText,
-                        fontSize = 11.5.sp,
-                        color = subtitleColor,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Surface(
+                        color = pillBg,
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.border(1.dp, pillBorder, RoundedCornerShape(6.dp))
+                    ) {
+                        Text(
+                            text = subtitleText,
+                            fontSize = 11.5.sp,
+                            color = subtitleColor,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
                 }
                 Spacer(Modifier.width(8.dp))
                 Surface(
@@ -897,7 +922,8 @@ private fun SelectedDateDetailCard(
                                     Icon(Icons.Default.FitnessCenter, contentDescription = null, modifier = Modifier.size(14.dp), tint = StatusGreenBorder)
                                     Spacer(Modifier.width(5.dp))
                                     val exDisplay = if (ex.source == "HC_STEPS") {
-                                        "👟 [Health] ${ex.title} — +${ex.activeKcal}kcal"
+                                        val bonus = (ex.steps - 4000).coerceAtLeast(0)
+                                        "👟 [Health] 도보 ${ex.steps}보(초과 ${bonus}보) — +${ex.activeKcal}kcal"
                                     } else {
                                         "[${ex.source}] ${ex.title} (${ex.durationMinutes}분) — +${ex.activeKcal}kcal"
                                     }
@@ -1025,7 +1051,7 @@ private fun CalorieBalanceGraphicBox(evaluation: DayEvaluation) {
                 }
             }
 
-            // 4-column single-line metric tiles: 권장섭취 - 실제섭취 + 운동·도보 = 섭취 가능 (exact arithmetic!)
+            // 4-column single-line metric tiles: 4th tile ("섭취 가능") uses high-contrast solid badge styling (same 13.sp font size, maximum visual pop!)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -1033,11 +1059,11 @@ private fun CalorieBalanceGraphicBox(evaluation: DayEvaluation) {
                 BalanceTile("권장 섭취", "${plan.recommendedIntake}", "kcal", Color(0xFF0F172A), Modifier.weight(1f))
                 BalanceTile("실제 섭취", "${evaluation.totalIntakeKcal}", "kcal", Color(0xFF0F172A), Modifier.weight(1f))
                 BalanceTile("운동·도보", "${evaluation.exerciseKcal}", "kcal", StatusGreenText, Modifier.weight(1f))
-                BalanceTile(
-                    label = if (rem >= 0) "섭취 가능" else "초과 칼로리",
+                HighlightedRemainingTile(
+                    label = if (rem >= 0) "✨ 섭취 가능" else "⚠️ 초과 칼로리",
                     numberText = "$rem",
                     unit = "kcal",
-                    valueColor = if (rem >= 0) StatusGreenText else StatusRedText,
+                    isPositive = rem >= 0,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -1083,6 +1109,64 @@ private fun BalanceTile(
                     text = unit,
                     fontSize = 8.5.sp,
                     color = Color(0xFF64748B),
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.padding(start = 1.dp, bottom = 1.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * High-contrast solid badge tile for "섭취 가능" (Remaining Intakeable Calories):
+ * Keeps the exact same 13.sp font size so it never overflows or wraps, while standing out
+ * immediately via a vivid solid emerald/crimson background, 2.dp accent border, and crisp white text.
+ */
+@Composable
+private fun HighlightedRemainingTile(
+    label: String,
+    numberText: String,
+    unit: String,
+    isPositive: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val bg = if (isPositive) Color(0xFF047857) else Color(0xFFDC2626)
+    val border = if (isPositive) Color(0xFF10B981) else Color(0xFFF87171)
+    val labelColor = if (isPositive) Color(0xFFA7F3D0) else Color(0xFFFECACA)
+
+    Surface(
+        color = bg,
+        shape = RoundedCornerShape(7.dp),
+        modifier = modifier.border(2.dp, border, RoundedCornerShape(7.dp))
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = label,
+                fontSize = 9.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = labelColor,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = numberText,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color.White,
+                    maxLines = 1,
+                    softWrap = false
+                )
+                Text(
+                    text = unit,
+                    fontSize = 8.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = labelColor,
                     maxLines = 1,
                     softWrap = false,
                     modifier = Modifier.padding(start = 1.dp, bottom = 1.dp)

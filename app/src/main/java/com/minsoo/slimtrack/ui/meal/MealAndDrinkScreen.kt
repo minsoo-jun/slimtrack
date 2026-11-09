@@ -105,11 +105,6 @@ fun MealAndDrinkScreen(
     var drinkVolumeMl by remember { mutableStateOf("360") }
     var drinkAbvText by remember { mutableStateOf("16.5") }
 
-    var manualExTitle by remember { mutableStateOf("Zone 2 러닝") }
-    var manualExMin by remember { mutableStateOf("40") }
-    var manualExKcal by remember { mutableStateOf("320") }
-    var manualStepsInput by remember { mutableStateOf("10000") }
-
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -756,47 +751,6 @@ fun MealAndDrinkScreen(
                                 DeleteRecordButton(onClick = { onDeleteExercise(ex) })
                             }
                         }
-                    }
-                }
-
-                HorizontalDivider()
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = manualExTitle,
-                        onValueChange = { manualExTitle = it },
-                        label = { Text("운동명", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
-                        modifier = Modifier.weight(1.3f),
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = manualExMin,
-                        onValueChange = { manualExMin = it },
-                        label = { Text("분", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
-                        modifier = Modifier.weight(0.65f),
-                        singleLine = true
-                    )
-                    OutlinedTextField(
-                        value = manualExKcal,
-                        onValueChange = { manualExKcal = it },
-                        label = { Text("kcal", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
-                        modifier = Modifier.weight(0.8f),
-                        singleLine = true
-                    )
-                    Button(
-                        onClick = {
-                            val min = manualExMin.toIntOrNull() ?: 30
-                            val kcal = manualExKcal.toIntOrNull() ?: 0
-                            if (manualExTitle.isNotBlank() && kcal > 0) {
-                                onAddManualExercise(manualExTitle.trim(), min, kcal)
-                            }
-                        },
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
-                    ) {
-                        Text("추가", fontSize = 12.sp, maxLines = 1, softWrap = false)
                     }
                 }
             }

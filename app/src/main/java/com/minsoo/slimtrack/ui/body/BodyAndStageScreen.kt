@@ -326,7 +326,14 @@ fun BodyAndStageScreen(
                         GoalStage.STAGE_2_MID -> bodyStatus.stageResult.stage2Completed
                         GoalStage.STAGE_3_LONG -> bodyStatus.stageResult.stage3Completed
                     }
-                    StageRoadmapItem(spec = spec, isCurrent = isCurrent, isDone = isDone)
+                    StageRoadmapItem(
+                        spec = spec,
+                        today = today,
+                        effectiveStartDate = effectiveStartDate,
+                        remainingKgToActiveStage = bodyStatus.stageResult.remainingKgToActiveStage,
+                        isCurrent = isCurrent,
+                        isDone = isDone
+                    )
                 }
             }
         }
@@ -633,9 +640,15 @@ private fun BodyFatTrendChart(
 @Composable
 private fun StageRoadmapItem(
     spec: com.minsoo.slimtrack.domain.StageSpec,
+    today: LocalDate,
+    effectiveStartDate: LocalDate,
+    remainingKgToActiveStage: Double,
     isCurrent: Boolean,
     isDone: Boolean
 ) {
+    val stageDeadline = effectiveStartDate.plusMonths(spec.monthsFromStart.toLong().coerceAtLeast(1L))
+    val daysLeft = java.time.temporal.ChronoUnit.DAYS.between(today, stageDeadline).toInt().coerceAtLeast(0)
+
     val bg = when {
         isDone -> StatusGreenBg
         isCurrent -> MaterialTheme.colorScheme.primaryContainer
@@ -654,7 +667,7 @@ private fun StageRoadmapItem(
             .fillMaxWidth()
             .border(if (isCurrent || isDone) 1.5.dp else 0.dp, border, RoundedCornerShape(10.dp))
     ) {
-        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -666,18 +679,68 @@ private fun StageRoadmapItem(
                     fontSize = 13.sp,
                     maxLines = 1,
                     softWrap = false,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
+                Spacer(Modifier.width(6.dp))
                 if (isDone) {
                     Icon(Icons.Default.CheckCircle, contentDescription = "달성", tint = StatusGreenBorder, modifier = Modifier.size(16.dp))
+                } else if (isCurrent) {
+                    // High-urgency D-Day countdown badge for the active stage!
+                    Surface(
+                        color = Color(0xFFDC2626),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = "🔥 D-${daysLeft} (${daysLeft}일 남음)",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "D-${daysLeft}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF64748B),
+                        maxLines = 1,
+                        softWrap = false
+                    )
                 }
             }
+
+            if (isCurrent) {
+                Surface(
+                    color = Color(0xFFFEF2F2),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Color(0xFFF87171), RoundedCornerShape(6.dp))
+                ) {
+                    Text(
+                        text = "⏰ 마감일(${stageDeadline})까지 딱 ${daysLeft}일 남음! 목표까지 -${String.format("%.1fkg", remainingKgToActiveStage)} 필수",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color(0xFFB91C1C),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                    )
+                }
+            }
+
             Text(
-                text = "목표 체중: ${spec.targetWeightMinKg.toInt()}~${spec.targetWeightMaxKg.toInt()}kg · 목표 내장지방: ${spec.targetVisceralFatMax}Lv 이하",
+                text = "목표 체중: ${spec.targetWeightMinKg.toInt()}~${spec.targetWeightMaxKg.toInt()}kg · 목표 내장지방: ${spec.targetVisceralFatMax}Lv 이하 (마감: $stageDeadline)",
                 fontSize = 11.5.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
-                softWrap = false
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
             spec.strategyPointsKo.forEach { pt ->
                 Text(text = "• $pt", fontSize = 11.sp, color = Color(0xFF334155))
