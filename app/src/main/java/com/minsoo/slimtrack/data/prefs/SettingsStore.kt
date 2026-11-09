@@ -73,7 +73,8 @@ data class AppSettings(
     val strictness: AdviceStrictness = AdviceStrictness.STRICT,
     val sundayMorningAlarmEnabled: Boolean = true,
     val missingMeal21AlarmEnabled: Boolean = true,
-    val onboardingCompleted: Boolean = false
+    val onboardingCompleted: Boolean = false,
+    val fontScalePercent: Int = 125 // Default 125% (크게) for comfortable reading without glasses
 )
 
 class SettingsStore(private val context: Context) {
@@ -84,6 +85,7 @@ class SettingsStore(private val context: Context) {
         val SUNDAY_ALARM = booleanPreferencesKey("sunday_morning_alarm")
         val MISSING_MEAL_ALARM = booleanPreferencesKey("missing_meal_21_alarm")
         val ONBOARDING_DONE = booleanPreferencesKey("onboarding_completed")
+        val FONT_SCALE_PERCENT = intPreferencesKey("font_scale_percent")
     }
 
     private val syncPrefs = context.getSharedPreferences("slimtrack_settings_backup", Context.MODE_PRIVATE)
@@ -97,13 +99,15 @@ class SettingsStore(private val context: Context) {
         val sun = syncPrefs.getBoolean("sunday_morning_alarm", true)
         val meal = syncPrefs.getBoolean("missing_meal_21_alarm", true)
         val done = syncPrefs.getBoolean("onboarding_completed", false)
+        val fontPct = syncPrefs.getInt("font_scale_percent", 125).coerceIn(90, 160)
         return AppSettings(
             geminiModel = model,
             toleranceKcal = tol,
             strictness = strictness,
             sundayMorningAlarmEnabled = sun,
             missingMeal21AlarmEnabled = meal,
-            onboardingCompleted = done
+            onboardingCompleted = done,
+            fontScalePercent = fontPct
         )
     }
 
@@ -115,6 +119,7 @@ class SettingsStore(private val context: Context) {
             .putBoolean("sunday_morning_alarm", settings.sundayMorningAlarmEnabled)
             .putBoolean("missing_meal_21_alarm", settings.missingMeal21AlarmEnabled)
             .putBoolean("onboarding_completed", settings.onboardingCompleted)
+            .putInt("font_scale_percent", settings.fontScalePercent.coerceIn(90, 160))
             .commit()
     }
 
@@ -124,13 +129,15 @@ class SettingsStore(private val context: Context) {
             runCatching { AdviceStrictness.valueOf(it) }.getOrNull()
         } ?: backup.strictness
         val resolvedModel = Gemini3Catalog.ensureGemini3Model(prefs[Keys.GEMINI_MODEL] ?: backup.geminiModel)
+        val resolvedFontPct = (prefs[Keys.FONT_SCALE_PERCENT] ?: backup.fontScalePercent).coerceIn(90, 160)
         val resolved = AppSettings(
             geminiModel = resolvedModel,
             toleranceKcal = prefs[Keys.TOLERANCE_KCAL] ?: backup.toleranceKcal,
             strictness = strictness,
             sundayMorningAlarmEnabled = prefs[Keys.SUNDAY_ALARM] ?: backup.sundayMorningAlarmEnabled,
             missingMeal21AlarmEnabled = prefs[Keys.MISSING_MEAL_ALARM] ?: backup.missingMeal21AlarmEnabled,
-            onboardingCompleted = prefs[Keys.ONBOARDING_DONE] ?: backup.onboardingCompleted
+            onboardingCompleted = prefs[Keys.ONBOARDING_DONE] ?: backup.onboardingCompleted,
+            fontScalePercent = resolvedFontPct
         )
         writeBackupSettings(resolved)
         resolved
@@ -145,6 +152,7 @@ class SettingsStore(private val context: Context) {
             prefs[Keys.SUNDAY_ALARM] = settings.sundayMorningAlarmEnabled
             prefs[Keys.MISSING_MEAL_ALARM] = settings.missingMeal21AlarmEnabled
             prefs[Keys.ONBOARDING_DONE] = settings.onboardingCompleted
+            prefs[Keys.FONT_SCALE_PERCENT] = settings.fontScalePercent.coerceIn(90, 160)
         }
     }
 }

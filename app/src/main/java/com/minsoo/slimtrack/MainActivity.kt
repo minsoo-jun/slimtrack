@@ -71,7 +71,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            SlimTrackTheme {
+            val dashboard by viewModel.dashboardState.collectAsState()
+            val fontScalePct = dashboard?.settings?.fontScalePercent ?: 125
+            SlimTrackTheme(fontScalePercent = fontScalePct) {
                 SlimTrackRoot(
                     activity = this,
                     viewModel = viewModel

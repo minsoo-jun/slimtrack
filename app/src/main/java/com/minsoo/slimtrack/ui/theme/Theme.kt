@@ -93,14 +93,18 @@ private val LightColors = lightColorScheme(
 )
 
 @Composable
-fun SlimTrackTheme(content: @Composable () -> Unit) {
+fun SlimTrackTheme(
+    fontScalePercent: Int = 125,
+    content: @Composable () -> Unit
+) {
     val currentDensity = LocalDensity.current
-    // Clamp system fontScale so oversized OS font settings never break card/calendar frames
-    val lockedDensity = Density(
+    // Apply user's selected font scale (90% ~ 160%, default 125% for presbyopia readability without glasses)
+    val userScale = (fontScalePercent.coerceIn(90, 160) / 100f)
+    val customDensity = Density(
         density = currentDensity.density,
-        fontScale = currentDensity.fontScale.coerceIn(0.85f, 0.96f)
+        fontScale = userScale
     )
-    CompositionLocalProvider(LocalDensity provides lockedDensity) {
+    CompositionLocalProvider(LocalDensity provides customDensity) {
         MaterialTheme(
             colorScheme = LightColors,
             typography = CompactTypography,

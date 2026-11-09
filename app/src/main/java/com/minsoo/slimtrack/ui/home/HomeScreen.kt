@@ -297,10 +297,10 @@ private fun StageHeaderCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                CompactMetricBox("현재체중", String.format("%.1f", body.currentWeightKg), "kg", Modifier.weight(1f))
-                CompactMetricBox("내장지방", "${body.latestInBody.visceralFatLevel}", "Lv", Modifier.weight(1f))
-                CompactMetricBox("골격근량", String.format("%.1f", body.latestInBody.skeletalMuscleKg), "kg", Modifier.weight(1f))
-                CompactMetricBox("공식BMR", "${body.bmrKcal}", "kcal", Modifier.weight(1f))
+                CompactMetricBox("체중(kg)", String.format("%.1f", body.currentWeightKg), "", Modifier.weight(1f))
+                CompactMetricBox("내장지방", "${body.latestInBody.visceralFatLevel}Lv", "", Modifier.weight(1f))
+                CompactMetricBox("골격근(kg)", String.format("%.1f", body.latestInBody.skeletalMuscleKg), "", Modifier.weight(1f))
+                CompactMetricBox("공식BMR", "${body.bmrKcal}", "", Modifier.weight(1f))
                 CompactMetricBox("BMI", String.format("%.1f", body.bmi), "", Modifier.weight(0.85f))
             }
         }
@@ -646,9 +646,12 @@ private fun CalendarDayCell(
     }
     val borderWidth = if (isSelected || isToday) 2.dp else 1.dp
 
+    val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+    val dynamicCellHeight = (46f * maxOf(1f, fontScale * 0.92f)).dp
+
     Box(
         modifier = modifier
-            .height(46.dp)
+            .height(dynamicCellHeight)
             .clip(RoundedCornerShape(7.dp))
             .background(bg)
             .border(borderWidth, borderColor, RoundedCornerShape(7.dp))
@@ -1127,7 +1130,7 @@ private fun BalanceTile(
         modifier = modifier
     ) {
         Column(
-            modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp),
+            modifier = Modifier.padding(vertical = 6.dp, horizontal = 3.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
@@ -1138,32 +1141,29 @@ private fun BalanceTile(
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis
             )
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    text = numberText,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = valueColor,
-                    maxLines = 1,
-                    softWrap = false
-                )
-                Text(
-                    text = unit,
-                    fontSize = 8.5.sp,
-                    color = Color(0xFF64748B),
-                    maxLines = 1,
-                    softWrap = false,
-                    modifier = Modifier.padding(start = 1.dp, bottom = 1.dp)
-                )
-            }
+            Text(
+                text = numberText,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = valueColor,
+                maxLines = 1,
+                softWrap = false
+            )
+            Text(
+                text = unit,
+                fontSize = 8.sp,
+                color = Color(0xFF64748B),
+                maxLines = 1,
+                softWrap = false
+            )
         }
     }
 }
 
 /**
  * High-contrast solid badge tile for "섭취 가능" (Remaining Intakeable Calories):
- * Keeps the exact same 13.sp font size so it never overflows or wraps, while standing out
- * immediately via a vivid solid emerald/crimson background, 2.dp accent border, and crisp white text.
+ * Stacks label, number, and unit vertically so even at 140%~155% presbyopia font scale
+ * the 4-digit calorie number is large, bold, and never clipped horizontally.
  */
 @Composable
 private fun HighlightedRemainingTile(
@@ -1183,7 +1183,7 @@ private fun HighlightedRemainingTile(
         modifier = modifier.border(2.dp, border, RoundedCornerShape(7.dp))
     ) {
         Column(
-            modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp),
+            modifier = Modifier.padding(vertical = 6.dp, horizontal = 3.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
@@ -1195,25 +1195,22 @@ private fun HighlightedRemainingTile(
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis
             )
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    text = numberText,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color.White,
-                    maxLines = 1,
-                    softWrap = false
-                )
-                Text(
-                    text = unit,
-                    fontSize = 8.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = labelColor,
-                    maxLines = 1,
-                    softWrap = false,
-                    modifier = Modifier.padding(start = 1.dp, bottom = 1.dp)
-                )
-            }
+            Text(
+                text = numberText,
+                fontSize = 13.5.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color.White,
+                maxLines = 1,
+                softWrap = false
+            )
+            Text(
+                text = unit,
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Bold,
+                color = labelColor,
+                maxLines = 1,
+                softWrap = false
+            )
         }
     }
 }

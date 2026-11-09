@@ -121,6 +121,7 @@ fun SettingsAndProfileScreen(
     val strictness = runCatching { AdviceStrictness.valueOf(strictnessName) }.getOrDefault(settings.strictness)
     var sundayAlarm by rememberSaveable(settings.sundayMorningAlarmEnabled) { mutableStateOf(settings.sundayMorningAlarmEnabled) }
     var missingMealAlarm by rememberSaveable(settings.missingMeal21AlarmEnabled) { mutableStateOf(settings.missingMeal21AlarmEnabled) }
+    var fontScalePercent by rememberSaveable(settings.fontScalePercent) { mutableStateOf(settings.fontScalePercent) }
 
     var savedBanner by remember { mutableStateOf<String?>(null) }
 
@@ -177,7 +178,8 @@ fun SettingsAndProfileScreen(
             toleranceKcal = tol,
             strictness = strictness,
             sundayMorningAlarmEnabled = sundayAlarm,
-            missingMeal21AlarmEnabled = missingMealAlarm
+            missingMeal21AlarmEnabled = missingMealAlarm,
+            fontScalePercent = fontScalePercent.coerceIn(90, 160)
         )
     }
 
@@ -248,6 +250,102 @@ fun SettingsAndProfileScreen(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
                 )
+            }
+        }
+
+        // Section 0 (TOP PRIORITY): Font Size Control for Presbyopia / Reading Without Glasses!
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "🔍 글자 크기 조절 (안경 없이 편하게 보기)",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "현재 크기: ${fontScalePercent}% · 선택 즉시 앱 전체에 반영됩니다.",
+                            fontSize = 11.sp,
+                            color = Color(0xFF475569),
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        OutlinedButton(
+                            onClick = {
+                                fontScalePercent = (fontScalePercent - 5).coerceIn(90, 160)
+                                autoPersistAll()
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text("- 작게", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                        }
+                        Button(
+                            onClick = {
+                                fontScalePercent = (fontScalePercent + 5).coerceIn(90, 160)
+                                autoPersistAll()
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text("+ 크게", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                        }
+                    }
+                }
+
+                // 5 Preset Buttons: 95%, 110%, 125%(기본), 140%(노안 추천), 155%(특대)
+                val fontPresets = listOf(
+                    95 to "작게\n95%",
+                    110 to "보통\n110%",
+                    125 to "크게\n125%",
+                    140 to "노안추천\n140%",
+                    155 to "특대\n155%"
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    fontPresets.forEach { (pct, label) ->
+                        val isSelected = fontScalePercent == pct
+                        val bg = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+                        val fg = if (isSelected) Color.White else Color(0xFF0F172A)
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(bg)
+                                .clickable {
+                                    fontScalePercent = pct
+                                    autoPersistAll()
+                                    savedBanner = "✅ 글자 크기가 ${pct}%로 변경·저장되었습니다."
+                                }
+                                .padding(vertical = 8.dp, horizontal = 2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 10.5.sp,
+                                lineHeight = 13.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = fg,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                }
             }
         }
 
