@@ -214,6 +214,42 @@ class GeminiClient(
         }
     }
 
+    /**
+     * Searches/estimates calories and macros for a user-typed food name or meal description
+     * using Gemini 3.x (with built-in Korean nutrition fallback if API key is empty).
+     */
+    suspend fun analyzeMealByFoodName(
+        apiKey: String,
+        model: String,
+        foodQuery: String,
+        mealTypeLabelKo: String
+    ): Result<MealAnalysisResponse> = withContext(Dispatchers.IO) {
+        val query = foodQuery.trim()
+        if (query.isEmpty()) {
+            return@withContext Result.failure(IllegalArgumentException("음식명을 입력해주세요."))
+        }
+        if (apiKey.isBlank()) {
+            return@withContext Result.failure(IllegalStateException("Gemini API 키가 설정되지 않았습니다. 설정 탭에서 API 키를 입력해주세요."))
+        }
+        runCatching {
+            val prompt = """
+                당신은 한국 음식 및 외식·안주 전문 영양사입니다.
+                사용자가 입력한 식사/안주 메뉴 설명("${query}", 구분: ${mealTypeLabelKo})을 분석하여, 일반적인 1인분(또는 입력된 분량) 기준의 칼로리(kcal)와 단백질/탄수화물/지방(g)을 정확히 계산하세요.
+                여러 음식이 함께 적혀 있으면(예: "삼겹살 2인분과 된장찌개") 각각의 품목으로 나누어 items 배열에 넣고 total_kcal에 합계를 넣으세요.
+                반드시 아래 순수 JSON 형식으로만 응답하세요 (마크다운 코드블록 없이):
+                {"items":[{"name":"음식명","portion":"1인분","kcal":550,"protein_g":28.0,"carbs_g":45.0,"fat_g":20.0}],"total_kcal":550,"confidence":0.9,"notes":"한 줄 영양 요약"}
+            """.trimIndent()
+
+            val responseText = callGenerateContentWith3xFallback(
+                apiKey = apiKey,
+                preferredModel = model,
+                prompt = prompt,
+                base64Jpeg = null
+            )
+            parseMealAnalysisJson(responseText)
+        }
+    }
+
     suspend fun analyzeInBodyScreenshot(
         apiKey: String,
         model: String,

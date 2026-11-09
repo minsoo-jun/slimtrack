@@ -180,13 +180,8 @@ class SlimTrackScreenshotTest {
                 MealAndDrinkScreen(
                     selectedDate = today,
                     selectedMealType = MealType.LUNCH,
-                    stagedItems = listOf(
-                        FoodItemEntry("닭가슴살 샐러드", "1인분", 420, 38f, 18f, 12f)
-                    ),
-                    stagedNotes = "점심 사진 분석 결과",
-                    stagedConfidence = 0.92f,
                     isAnalyzingPhoto = false,
-                    analysisStatusMessage = "✅ [점심] 1055kcal 저장 완료",
+                    analysisStatusMessage = "✅ [점심] '다양한 단백질원 정식' AI 칼로리 자동 추가 완료: 1055kcal",
                     todayMeals = listOf(
                         MealEntity(
                             id = 1,
@@ -199,7 +194,7 @@ class SlimTrackScreenshotTest {
                             notes = "다양한 단백질원 정식"
                         )
                     ),
-                    todayDrinks = listOf(DrinkEntity(1, "2026-11-09", "SOJU", "소주", 360, 16.5f, 328)),
+                    todayDrinks = listOf(DrinkEntity(1, "2026-11-09", "SOJU", "소주: 50ml * 16.5% * 3잔", 150, 16.5f, 137)),
                     todayExercises = listOf(
                         ExerciseEntity("hc-steps-2026-11-09", "2026-11-09", "일일 걸음수(방식A)", "도보 5825보 (4,000보 초과 1825보)", 0, 83, 5825, "HC_STEPS"),
                         ExerciseEntity("hc-1", "2026-11-09", "운동", "운동", 46, 158, 0, "HC")
@@ -207,15 +202,11 @@ class SlimTrackScreenshotTest {
                     onSelectMealType = {},
                     onTakePhotoClick = {},
                     onPickPhotoClick = {},
-                    onUpdateStagedItem = { _, _ -> },
-                    onRemoveStagedItem = {},
-                    onAddManualFoodItem = {},
-                    onSaveMeal = {},
+                    onSearchAndAddFoodByName = {},
                     onDeleteMeal = {},
-                    onAddDrink = { _, _, _ -> },
+                    onAddDrinkWithCount = { _, _, _, _, _ -> },
                     onDeleteDrink = {},
-                    onSyncHealthConnectExercises = {},
-                    onAddManualExercise = { _, _, _ -> }
+                    onSyncHealthConnectExercises = {}
                 )
             }
         }

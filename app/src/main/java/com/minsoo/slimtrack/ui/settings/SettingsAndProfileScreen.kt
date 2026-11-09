@@ -1,5 +1,6 @@
 package com.minsoo.slimtrack.ui.settings
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -46,11 +47,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.minsoo.slimtrack.R
 import com.minsoo.slimtrack.data.health.HealthConnectStatus
 import com.minsoo.slimtrack.data.prefs.AppSettings
 import com.minsoo.slimtrack.data.prefs.Gemini3Catalog
@@ -195,14 +198,37 @@ fun SettingsAndProfileScreen(
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(
-            text = "⚙ 프로필 · 시작일 · 3단계 목표 · Gemini 3.x 설정",
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.sticker_love),
+                contentDescription = "프로필 설정 스티커",
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(10.dp))
+            )
+            Spacer(Modifier.width(8.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "⚙ 프로필 · 시작일 · 3단계 목표 · Gemini 3.x 설정",
+                    fontSize = 15.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "모든 설정과 3단계 목표는 변경 즉시 로컬에 이중 안전 저장됩니다.",
+                    fontSize = 11.sp,
+                    color = Color(0xFF475569),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
 
         if (!savedBanner.isNullOrBlank()) {
             Surface(

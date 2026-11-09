@@ -198,12 +198,61 @@ class MainViewModel(
             )
             _isAnalyzingPhoto.value = false
             result.onSuccess { resp ->
-                _stagedItems.value = resp.toFoodItemEntries()
-                _stagedNotes.value = resp.notes
-                _stagedConfidence.value = resp.confidence
-                _statusMessage.value = "🤖 Gemini 3.x 분석 완료: ${resp.items.size}개 품목, 총 ${resp.totalKcal}kcal"
+                val entries = resp.toFoodItemEntries()
+                val summaryNote = if (entries.isNotEmpty()) {
+                    entries.joinToString(", ") { "${it.name}(${it.kcal}kcal)" }
+                } else {
+                    resp.notes
+                }
+                val saved = repository.saveMealWithItems(
+                    date = _selectedDate.value,
+                    mealType = _selectedMealType.value,
+                    items = entries,
+                    photoUri = uri.toString(),
+                    confidence = resp.confidence,
+                    notes = summaryNote,
+                    userEdited = false
+                )
+                _stagedItems.value = emptyList()
+                _stagedNotes.value = ""
+                _statusMessage.value = "✅ [${_selectedMealType.value.labelKo}] 사진 분석 및 자동 저장 완료: ${saved.totalKcal}kcal ($summaryNote)"
             }.onFailure { err ->
                 _statusMessage.value = "⚠️ 사진 분석 실패: ${err.message}"
+            }
+        }
+    }
+
+    fun analyzeAndSaveMealByFoodName(foodQuery: String) {
+        val query = foodQuery.trim()
+        if (query.isEmpty()) return
+        viewModelScope.launch {
+            _isAnalyzingPhoto.value = true
+            val apiKey = repository.secretStore.getGeminiApiKey()
+            val model = Gemini3Catalog.ensureGemini3Model(dashboardState.value?.settings?.geminiModel)
+            val result = repository.geminiClient.analyzeMealByFoodName(
+                apiKey = apiKey,
+                model = model,
+                foodQuery = query,
+                mealTypeLabelKo = _selectedMealType.value.labelKo
+            )
+            _isAnalyzingPhoto.value = false
+            result.onSuccess { resp ->
+                val entries = resp.toFoodItemEntries().ifEmpty {
+                    listOf(FoodItemEntry(name = query, portion = "1인분", kcal = resp.totalKcal.coerceAtLeast(300)))
+                }
+                val summaryNote = entries.joinToString(", ") { "${it.name}(${it.kcal}kcal)" }
+                val saved = repository.saveMealWithItems(
+                    date = _selectedDate.value,
+                    mealType = _selectedMealType.value,
+                    items = entries,
+                    photoUri = "",
+                    confidence = resp.confidence,
+                    notes = summaryNote,
+                    userEdited = false
+                )
+                _statusMessage.value = "✅ [${_selectedMealType.value.labelKo}] '$query' AI 칼로리 자동 추가 완료: ${saved.totalKcal}kcal (단백질 ${saved.proteinGrams.toInt()}g)"
+            }.onFailure { err ->
+                _statusMessage.value = "⚠️ 음식명 칼로리 검색 실패: ${err.message}"
             }
         }
     }
@@ -264,19 +313,28 @@ class MainViewModel(
         }
     }
 
-    fun addDrink(preset: AlcoholPreset, volumeMl: Int, abvPct: Float) {
+    fun addDrink(
+        preset: AlcoholPreset,
+        unitVolumeMl: Int,
+        abvPct: Float,
+        count: Float = 1f,
+        unitLabelKo: String = "병"
+    ) {
         viewModelScope.launch {
-            val kcal = AlcoholCalculator.calculatePresetKcal(preset, volumeMl, abvPct.toDouble())
+            val totalVolumeMl = (unitVolumeMl * count).toInt().coerceAtLeast(1)
+            val kcal = AlcoholCalculator.calculatePresetKcal(preset, totalVolumeMl, abvPct.toDouble())
+            val countStr = if (count % 1f == 0f) "${count.toInt()}" else String.format("%.1f", count)
+            val formulaLabel = "${preset.labelKo}: ${unitVolumeMl}ml * ${abvPct}% * ${countStr}${unitLabelKo}"
             val entity = DrinkEntity(
                 dateIso = _selectedDate.value.toString(),
                 kind = preset.name,
-                displayLabel = preset.labelKo,
-                volumeMl = volumeMl,
+                displayLabel = formulaLabel,
+                volumeMl = totalVolumeMl,
                 abvPct = abvPct,
                 kcal = kcal
             )
             repository.dao.insertDrink(entity)
-            _statusMessage.value = "🍺 ${preset.labelKo} ${volumeMl}ml (${kcal}kcal) 추가됨"
+            _statusMessage.value = "🍺 $formulaLabel = ${kcal}kcal 추가됨"
         }
     }
 

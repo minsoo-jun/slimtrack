@@ -1,6 +1,7 @@
 package com.minsoo.slimtrack.ui.home
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,11 +49,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.minsoo.slimtrack.R
 import com.minsoo.slimtrack.data.db.DrinkEntity
 import com.minsoo.slimtrack.data.db.ExerciseEntity
 import com.minsoo.slimtrack.data.db.MealEntity
@@ -224,6 +227,14 @@ private fun StageHeaderCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Image(
+                    painter = painterResource(id = R.drawable.sticker_oh_yeah),
+                    contentDescription = "오예 목표 캐릭터",
+                    modifier = Modifier
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                )
+                Spacer(Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(
                         text = "🎯 ${stage.number}단계 목표 (${stage.targetWeightMinKg.toInt()}~${stage.targetWeightMaxKg.toInt()}kg · 내장지방 ${stage.targetVisceralFatMax}Lv)",
@@ -705,6 +716,19 @@ private fun SelectedDateDetailCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                val dailyStickerRes = if (rem >= 0 && !evaluation.isMissingMealFailure) {
+                    R.drawable.sticker_good_job
+                } else {
+                    R.drawable.sticker_sorry
+                }
+                Image(
+                    painter = painterResource(id = dailyStickerRes),
+                    contentDescription = "오늘의 상태 스티커",
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                )
+                Spacer(Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
                         text = "📅 $date 일일 칼로리 수치",
@@ -874,8 +898,13 @@ private fun SelectedDateDetailCard(
                                 ) {
                                     Icon(Icons.Default.LocalBar, contentDescription = null, modifier = Modifier.size(14.dp), tint = StatusRedBorder)
                                     Spacer(Modifier.width(5.dp))
+                                    val drinkText = if (d.displayLabel.contains("*")) {
+                                        "${d.displayLabel} — ${d.kcal}kcal"
+                                    } else {
+                                        "${d.displayLabel}: ${d.volumeMl}ml * ${d.abvPct}% * 1회 — ${d.kcal}kcal"
+                                    }
                                     Text(
-                                        text = "${d.displayLabel} ${d.volumeMl}ml (${d.abvPct}%) — ${d.kcal}kcal",
+                                        text = drinkText,
                                         fontSize = 11.5.sp,
                                         maxLines = 1,
                                         softWrap = false,
@@ -1198,6 +1227,16 @@ private fun StrictCoachPreviewCard(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Image(
+                    painter = painterResource(
+                        id = if (isBad) R.drawable.sticker_cheer_up else R.drawable.sticker_best
+                    ),
+                    contentDescription = "코치 스티커",
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                )
+                Spacer(Modifier.width(6.dp))
                 Box(
                     modifier = Modifier
                         .size(28.dp)

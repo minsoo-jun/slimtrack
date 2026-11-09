@@ -233,9 +233,6 @@ fun SlimTrackRoot(
                 MainTab.MEAL -> MealAndDrinkScreen(
                     selectedDate = selectedDate,
                     selectedMealType = selectedMealType,
-                    stagedItems = stagedItems,
-                    stagedNotes = stagedNotes,
-                    stagedConfidence = stagedConfidence,
                     isAnalyzingPhoto = isAnalyzingPhoto,
                     analysisStatusMessage = statusMessage,
                     todayMeals = selectedDateMeals,
@@ -250,17 +247,12 @@ fun SlimTrackRoot(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         )
                     },
-                    onUpdateStagedItem = viewModel::updateStagedItem,
-                    onRemoveStagedItem = viewModel::removeStagedItem,
-                    onAddManualFoodItem = viewModel::addManualStagedItem,
-                    onSaveMeal = viewModel::saveStagedMeal,
+                    onSearchAndAddFoodByName = viewModel::analyzeAndSaveMealByFoodName,
                     onDeleteMeal = viewModel::deleteMeal,
-                    onAddDrink = viewModel::addDrink,
+                    onAddDrinkWithCount = viewModel::addDrink,
                     onDeleteDrink = viewModel::deleteDrink,
                     onSyncHealthConnectExercises = viewModel::syncHealthConnect,
-                    onAddManualExercise = viewModel::addManualExercise,
                     onDeleteExercise = viewModel::deleteExercise,
-                    onSaveDailySteps = viewModel::saveDailyStepsMethodA,
                     modifier = Modifier.padding(innerPadding)
                 )
 

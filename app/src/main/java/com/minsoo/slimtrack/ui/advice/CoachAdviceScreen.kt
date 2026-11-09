@@ -1,5 +1,6 @@
 package com.minsoo.slimtrack.ui.advice
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -34,10 +35,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.minsoo.slimtrack.R
 import com.minsoo.slimtrack.data.db.AdviceEntity
 import com.minsoo.slimtrack.domain.AdviceVerdict
 import com.minsoo.slimtrack.domain.ViolationSeverity
@@ -125,9 +128,19 @@ fun CoachAdviceScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f)
                     ) {
+                        Image(
+                            painter = painterResource(
+                                id = if (isBad) R.drawable.sticker_cheer_up else R.drawable.sticker_best
+                            ),
+                            contentDescription = "코치 캐릭터 스티커",
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                        )
+                        Spacer(Modifier.width(8.dp))
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(34.dp)
                                 .clip(CircleShape)
                                 .background(headerBorder),
                             contentAlignment = Alignment.Center
