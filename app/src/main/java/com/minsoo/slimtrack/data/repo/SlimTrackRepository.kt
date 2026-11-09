@@ -347,8 +347,60 @@ class SlimTrackRepository(
     }
 
     /**
-     * Manual & background sync from Health Connect (exercises + weights + body fat).
-     * Respects effective start date (goalStartDate) and deduplicates weight records by hcRecordId.
+     * Automatic local database sanitizer and repair:
+     * 1. Removes any records strictly before goalStartDate.
+     * 2. Deduplicates accidental duplicate meals on the same date (same mealType + totalKcal).
+     * 3. Repairs any corrupted local exercise records (e.g., 46-min workout with 12 kcal or inflated >10,000 raw step sum)
+     *    and refreshes from Health Connect when available.
+     */
+    suspend fun autoRepairAndSanitizeLocalData(today: LocalDate = LocalDate.now()): String {
+        val profile = profileStore.readBackupProfile()
+        val startIso = profile.goalStartDate.toString()
+        val endIso = today.plusDays(1).toString()
+
+        // 1. Purge records before effective start date
+        purgeRecordsBeforeStartDate(profile.goalStartDate)
+
+        // 2. Deduplicate identical meals on the same day (same dateIso + mealType + totalKcal)
+        var duplicateMealsRemoved = 0
+        val allMeals = dao.getMealsBetween(startIso, endIso)
+        val seenMealKeys = mutableSetOf<String>()
+        for (meal in allMeals) {
+            val key = "${meal.dateIso}|${meal.mealType}|${meal.totalKcal}"
+            if (!seenMealKeys.add(key)) {
+                dao.deleteMealById(meal.id)
+                duplicateMealsRemoved++
+            }
+        }
+
+        // 3. Repair any existing local exercise records with implausibly low kcal (e.g. 46 min / 12 kcal)
+        var repairedExercises = 0
+        val currentExercises = dao.getExercisesBetween(startIso, endIso)
+        val weightKg = dao.getLatestWeightLog()?.weightKg?.toDouble()
+            ?: dao.getLatestInBody()?.weightKg?.toDouble()
+            ?: profile.startWeightKg
+        for (ex in currentExercises) {
+            if (ex.source == "HC" && ex.durationMinutes >= 10 && ex.activeKcal < (ex.durationMinutes * 1.5).roundToInt()) {
+                // Realistic walking/exercise burn for ~98kg is ~3.44 kcal/min (46 min -> 158 kcal)
+                val correctedKcal = (ex.durationMinutes * (weightKg * 0.035)).roundToInt()
+                dao.upsertExercise(ex.copy(activeKcal = correctedKcal))
+                repairedExercises++
+            }
+        }
+
+        // 4. Re-sync cleanly from Health Connect if available
+        val syncSummary = syncFromHealthConnect(today = today)
+        return buildString {
+            append(syncSummary.messageKo)
+            if (duplicateMealsRemoved > 0 || repairedExercises > 0) {
+                append(" (자동 보정: 중복 식단 ${duplicateMealsRemoved}건 정리, 오류 운동 칼로리 ${repairedExercises}건 수정)")
+            }
+        }
+    }
+
+    /**
+     * Manual & background sync from Health Connect (exercises + deduplicated steps + weights + body fat).
+     * Replaces stale HC/HC_STEPS records in the sync window so old corrupted step/calorie values are overwritten.
      */
     suspend fun syncFromHealthConnect(
         today: LocalDate = LocalDate.now(),
@@ -378,6 +430,8 @@ class SlimTrackRepository(
 
         val exercises = healthConnectRepository.readExercises(startDate, today, weightForSteps)
         if (exercises.isNotEmpty()) {
+            // Clear stale HC and HC_STEPS records in the range so corrupted old values (like 10733 steps or 12 kcal) are replaced!
+            dao.deleteHcExercisesBetween(startDate.toString(), today.toString())
             dao.upsertExercises(exercises)
         }
 

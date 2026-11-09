@@ -110,6 +110,15 @@ class MainViewModel(
 
     val apiKeyFlow: StateFlow<String> = repository.secretStore.apiKeyFlow
 
+    init {
+        // Automatically sanitize & repair any corrupted local data and sync from Health Connect on startup
+        viewModelScope.launch {
+            runCatching {
+                repository.autoRepairAndSanitizeLocalData()
+            }
+        }
+    }
+
     fun prevMonth() {
         _currentYearMonth.value = _currentYearMonth.value.minusMonths(1)
     }
@@ -340,8 +349,8 @@ class MainViewModel(
 
     fun syncHealthConnect() {
         viewModelScope.launch {
-            val summary = repository.syncFromHealthConnect()
-            _statusMessage.value = summary.messageKo
+            val msg = repository.autoRepairAndSanitizeLocalData()
+            _statusMessage.value = msg
         }
     }
 

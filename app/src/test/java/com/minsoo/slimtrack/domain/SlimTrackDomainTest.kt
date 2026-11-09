@@ -30,9 +30,10 @@ class SlimTrackDomainTest {
         assertThat(plan.recommendedIntake).isEqualTo(1834) // Never below BMR
         assertThat(plan.exerciseTarget).isEqualTo(315)     // 682 - (2201 - 1834) = 315
 
-        // Eating 1834 kcal and burning 315 kcal exercise hits exact 0 balance (GREEN)
-        val bal = CalorieEngine.balance(plan, totalIntakeKcal = 1834, exerciseKcal = 315)
-        assertThat(bal).isEqualTo(0)
+        // Eating 1834 kcal and burning 0 kcal exercise leaves 0 remaining intake (GREEN)
+        // Eating 1055 kcal and burning 158 kcal exercise leaves 1834 - 1055 + 158 = 937 kcal remaining!
+        val bal = CalorieEngine.balance(plan, totalIntakeKcal = 1055, exerciseKcal = 158)
+        assertThat(bal).isEqualTo(937)
         assertThat(CalorieEngine.classifyBalanceColor(bal, 150)).isEqualTo(DayStatusColor.GREEN)
     }
 
@@ -195,7 +196,7 @@ class SlimTrackDomainTest {
         assertThat(dayBeforeStart.isMissingMealFailure).isFalse()
 
         val todayEval = CalorieEngine.evaluateDay(
-            input = DayRecordInput(today, 1055, 0, 299, 1),
+            input = DayRecordInput(today, 1055, 0, 158 + 83, 1),
             plan = plan,
             today = today,
             toleranceKcal = 150,
@@ -203,7 +204,10 @@ class SlimTrackDomainTest {
             effectiveStartDate = effectiveStart
         )
         assertThat(todayEval.statusColor).isEqualTo(DayStatusColor.GREEN)
-        assertThat(todayEval.remainingIntakeKcal).isEqualTo(763) // 1834 + 299 - 315 - 1055 = 763
+        assertThat(todayEval.remainingIntakeKcal).isEqualTo(1020) // 1834 - 1055 + 241 = 1020
+
+        // Verify 5,825 steps (4,000 baseline -> 1,825 bonus steps at 98.4kg -> 83 kcal)
+        assertThat(CalorieEngine.computeBonusStepsKcal(5825, 98.4)).isEqualTo(83)
     }
 
     @Test

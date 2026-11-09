@@ -86,7 +86,7 @@ class SlimTrackScreenshotTest {
         for (d in 1..ym.lengthOfMonth()) {
             val date = ym.atDay(d)
             val input = when (d) {
-                9 -> DayRecordInput(date, 1055, 0, 299, 1) // Today: 763 kcal remaining
+                9 -> DayRecordInput(date, 1055, 0, 241, 1) // Today: 1834 - 1055 + 241(운동158+도보83) = 1020 kcal remaining
                 else -> DayRecordInput(date, 0, 0, 0, 0)
             }
             evals[date] = CalorieEngine.evaluateDay(
@@ -155,9 +155,10 @@ class SlimTrackScreenshotTest {
                     ),
                     selectedDateDrinks = emptyList(),
                     selectedDateExercises = listOf(
-                        ExerciseEntity("hc-1", "2026-11-09", "러닝", "Zone 2 러닝", 40, 299, 4800, "HC")
+                        ExerciseEntity("hc-steps-2026-11-09", "2026-11-09", "일일 걸음수(방식A)", "도보 5825보 (4,000보 초과 1825보)", 0, 83, 5825, "HC_STEPS"),
+                        ExerciseEntity("hc-1", "2026-11-09", "운동", "운동", 46, 158, 0, "HC")
                     ),
-                    syncMessage = "Health Connect 동기화 완료: 운동 1건, 체중·체지방 3건",
+                    syncMessage = "Health 동기화 완료: 오늘 도보 5825보(+83kcal), 운동 46분(+158kcal)",
                     onPrevMonth = {},
                     onNextMonth = {},
                     onSelectDate = {},
@@ -199,7 +200,10 @@ class SlimTrackScreenshotTest {
                         )
                     ),
                     todayDrinks = listOf(DrinkEntity(1, "2026-11-09", "SOJU", "소주", 360, 16.5f, 328)),
-                    todayExercises = listOf(ExerciseEntity("hc-1", "2026-11-09", "러닝", "Zone 2 러닝", 40, 299, 4800, "HC")),
+                    todayExercises = listOf(
+                        ExerciseEntity("hc-steps-2026-11-09", "2026-11-09", "일일 걸음수(방식A)", "도보 5825보 (4,000보 초과 1825보)", 0, 83, 5825, "HC_STEPS"),
+                        ExerciseEntity("hc-1", "2026-11-09", "운동", "운동", 46, 158, 0, "HC")
+                    ),
                     onSelectMealType = {},
                     onTakePhotoClick = {},
                     onPickPhotoClick = {},

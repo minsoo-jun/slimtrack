@@ -117,6 +117,9 @@ interface AppDao {
     @Query("DELETE FROM exercises WHERE hcId = :hcId")
     suspend fun deleteExerciseByHcId(hcId: String)
 
+    @Query("DELETE FROM exercises WHERE source IN ('HC', 'HC_STEPS') AND dateIso BETWEEN :startIso AND :endIso")
+    suspend fun deleteHcExercisesBetween(startIso: String, endIso: String)
+
     @Query("DELETE FROM exercises WHERE dateIso < :startDateIso")
     suspend fun deleteExercisesBefore(startDateIso: String)
 

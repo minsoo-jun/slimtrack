@@ -896,8 +896,13 @@ private fun SelectedDateDetailCard(
                                 ) {
                                     Icon(Icons.Default.FitnessCenter, contentDescription = null, modifier = Modifier.size(14.dp), tint = StatusGreenBorder)
                                     Spacer(Modifier.width(5.dp))
+                                    val exDisplay = if (ex.source == "HC_STEPS") {
+                                        "👟 [Health] ${ex.title} — +${ex.activeKcal}kcal"
+                                    } else {
+                                        "[${ex.source}] ${ex.title} (${ex.durationMinutes}분) — +${ex.activeKcal}kcal"
+                                    }
                                     Text(
-                                        text = "[${ex.source}] ${ex.title} (${ex.durationMinutes}분) — ${ex.activeKcal}kcal",
+                                        text = exDisplay,
                                         fontSize = 11.5.sp,
                                         maxLines = 1,
                                         softWrap = false,
@@ -951,7 +956,7 @@ private fun DeletePillButton(onClick: () -> Unit) {
 @Composable
 private fun CalorieBalanceGraphicBox(evaluation: DayEvaluation) {
     val plan = evaluation.plan
-    val allowedBudget = (plan.recommendedIntake + evaluation.exerciseKcal - plan.exerciseTarget).coerceAtLeast(plan.bmr)
+    val allowedBudget = (plan.recommendedIntake + evaluation.exerciseKcal).coerceAtLeast(plan.bmr)
     val intakeRatio = (evaluation.totalIntakeKcal.toFloat() / allowedBudget.coerceAtLeast(1)).coerceIn(0f, 1.25f)
     val rem = evaluation.remainingIntakeKcal
     val barColor = when {
@@ -977,7 +982,7 @@ private fun CalorieBalanceGraphicBox(evaluation: DayEvaluation) {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "실제 섭취 ${evaluation.totalIntakeKcal} / 오늘 허용량 ${allowedBudget} kcal",
+                        text = "실제 섭취 ${evaluation.totalIntakeKcal} / 허용량(권장+운동) ${allowedBudget} kcal",
                         fontSize = 10.5.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color(0xFF334155),
@@ -985,7 +990,7 @@ private fun CalorieBalanceGraphicBox(evaluation: DayEvaluation) {
                         softWrap = false
                     )
                     Text(
-                        text = if (rem >= 0) "남은 섭취 가능 ${rem} kcal" else "${-rem} kcal 초과",
+                        text = if (rem >= 0) "섭취 가능 ${rem} kcal" else "${-rem} kcal 초과",
                         fontSize = 10.5.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = if (rem >= 0) StatusGreenText else StatusRedText,
@@ -1020,14 +1025,14 @@ private fun CalorieBalanceGraphicBox(evaluation: DayEvaluation) {
                 }
             }
 
-            // 4-column single-line metric tiles (4th tile = "섭취 가능", NO '+' sign for positive!)
+            // 4-column single-line metric tiles: 권장섭취 - 실제섭취 + 운동·도보 = 섭취 가능 (exact arithmetic!)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 BalanceTile("권장 섭취", "${plan.recommendedIntake}", "kcal", Color(0xFF0F172A), Modifier.weight(1f))
                 BalanceTile("실제 섭취", "${evaluation.totalIntakeKcal}", "kcal", Color(0xFF0F172A), Modifier.weight(1f))
-                BalanceTile("운동(목표${plan.exerciseTarget})", "${evaluation.exerciseKcal}", "kcal", StatusGreenText, Modifier.weight(1f))
+                BalanceTile("운동·도보", "${evaluation.exerciseKcal}", "kcal", StatusGreenText, Modifier.weight(1f))
                 BalanceTile(
                     label = if (rem >= 0) "섭취 가능" else "초과 칼로리",
                     numberText = "$rem",

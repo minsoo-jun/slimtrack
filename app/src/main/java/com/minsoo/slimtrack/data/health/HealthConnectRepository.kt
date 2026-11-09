@@ -11,10 +11,12 @@ import androidx.health.connect.client.records.LeanBodyMassRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.TotalCaloriesBurnedRecord
 import androidx.health.connect.client.records.WeightRecord
+import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import com.minsoo.slimtrack.data.db.ExerciseEntity
 import com.minsoo.slimtrack.data.db.WeightLogEntity
+import com.minsoo.slimtrack.domain.CalorieEngine
 import java.time.Duration
 import java.time.LocalDate
 import java.time.ZoneId
@@ -96,6 +98,13 @@ class HealthConnectRepository(private val context: Context) {
                 )
             ).records
 
+            val totalCalories = client.readRecords(
+                ReadRecordsRequest(
+                    recordType = TotalCaloriesBurnedRecord::class,
+                    timeRangeFilter = TimeRangeFilter.between(startInstant, endInstant)
+                )
+            ).records
+
             val stepRecords = client.readRecords(
                 ReadRecordsRequest(
                     recordType = StepsRecord::class,
@@ -109,21 +118,55 @@ class HealthConnectRepository(private val context: Context) {
                 val dateIso = session.startTime.atZone(zone).toLocalDate().toString()
                 val durationMin = Duration.between(session.startTime, session.endTime).toMinutes()
                     .toInt().coerceAtLeast(1)
+                val sessionPkg = session.metadata.dataOrigin.packageName
 
-                val overlappingKcal = activeCalories
+                // 1. Official Health Connect aggregate over the exact session window
+                val sessionAgg = runCatching {
+                    client.aggregate(
+                        AggregateRequest(
+                            metrics = setOf(
+                                ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL,
+                                TotalCaloriesBurnedRecord.ENERGY_TOTAL
+                            ),
+                            timeRangeFilter = TimeRangeFilter.between(session.startTime, session.endTime)
+                        )
+                    )
+                }.getOrNull()
+                val aggActiveKcal = sessionAgg?.get(ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL)
+                    ?.inKilocalories?.roundToInt() ?: 0
+                val aggTotalKcal = sessionAgg?.get(TotalCaloriesBurnedRecord.ENERGY_TOTAL)
+                    ?.inKilocalories?.roundToInt() ?: 0
+
+                // 2. Records overlapping the session window, grouped by source package to avoid double counting
+                val overlappingActiveByPkg = activeCalories
                     .filter { it.startTime < session.endTime && it.endTime > session.startTime }
-                    .sumOf { it.energy.inKilocalories }
-                    .roundToInt()
+                    .groupBy { it.metadata.dataOrigin.packageName }
+                    .mapValues { (_, list) -> list.sumOf { it.energy.inKilocalories }.roundToInt() }
 
-                val overlappingSteps = stepRecords
-                    .filter { it.startTime < session.endTime && it.endTime > session.startTime }
-                    .sumOf { it.count }
-                    .toInt()
+                val overlappingTotalByPkg = totalCalories
+                    .filter { it.startTime >= session.startTime.minusSeconds(60) && it.endTime <= session.endTime.plusSeconds(60) }
+                    .groupBy { it.metadata.dataOrigin.packageName }
+                    .mapValues { (_, list) -> list.sumOf { it.energy.inKilocalories }.roundToInt() }
 
-                val estimatedKcal = if (overlappingKcal > 0) {
-                    overlappingKcal
-                } else {
-                    (durationMin * 6.5).roundToInt()
+                val samePkgActive = overlappingActiveByPkg[sessionPkg] ?: 0
+                val samePkgTotal = overlappingTotalByPkg[sessionPkg] ?: 0
+                val maxPkgActive = overlappingActiveByPkg.values.maxOrNull() ?: 0
+                val maxPkgTotal = overlappingTotalByPkg.values.maxOrNull() ?: 0
+
+                // Minimum plausible exercise burn (~1.5 kcal/min) so a stray 12 kcal sensor fragment
+                // never overrides the actual 158 kcal workout record from Google Health/Fit!
+                val minPlausibleKcal = (durationMin * 1.5).roundToInt()
+
+                val resolvedKcal = when {
+                    samePkgTotal >= minPlausibleKcal -> samePkgTotal
+                    samePkgActive >= minPlausibleKcal -> samePkgActive
+                    maxPkgTotal >= minPlausibleKcal -> maxPkgTotal
+                    aggActiveKcal >= minPlausibleKcal -> aggActiveKcal
+                    maxPkgActive >= minPlausibleKcal -> maxPkgActive
+                    aggTotalKcal in minPlausibleKcal..(durationMin * 15) -> aggTotalKcal
+                    maxOf(samePkgTotal, samePkgActive, maxPkgTotal, maxPkgActive) > 0 ->
+                        maxOf(samePkgTotal, samePkgActive, maxPkgTotal, maxPkgActive)
+                    else -> (durationMin * 3.5).roundToInt()
                 }
 
                 result += ExerciseEntity(
@@ -132,30 +175,54 @@ class HealthConnectRepository(private val context: Context) {
                     exerciseType = mapExerciseTypeKo(session.exerciseType),
                     title = session.title?.takeIf { it.isNotBlank() } ?: mapExerciseTypeKo(session.exerciseType),
                     durationMinutes = durationMin,
-                    activeKcal = estimatedKcal,
-                    steps = overlappingSteps,
+                    activeKcal = resolvedKcal,
+                    steps = 0,
                     source = "HC"
                 )
             }
 
-            // Method A (방식 A): Aggregate daily steps from Health Connect StepsRecord,
-            // excluding steps already inside an explicit ExerciseSessionRecord to avoid double counting,
-            // and award bonus exercise kcal for steps above 4,000 steps/day.
-            val stepsByDate = stepRecords.groupBy { it.startTime.atZone(zone).toLocalDate().toString() }
-            for ((dateIso, dayStepList) in stepsByDate) {
-                val totalSteps = dayStepList.sumOf { it.count }.toInt()
-                val nonSessionSteps = dayStepList
-                    .filter { sr ->
-                        sessions.none { sess -> sr.startTime < sess.endTime && sr.endTime > sess.startTime }
-                    }
-                    .sumOf { it.count }
-                    .toInt()
+            // Method A (방식 A): Read deduplicated daily step counts from Health Connect using
+            // HealthConnectClient.aggregate(StepsRecord.COUNT_TOTAL) per day so multiple apps
+            // (e.g., phone + watch/Google Fit) are NEVER summed twice (5,825 steps stays 5,825 steps!).
+            var cursor = startDate
+            while (!cursor.isAfter(endDate)) {
+                val dateIso = cursor.toString()
+                val dayStart = cursor.atStartOfDay(zone).toInstant()
+                val dayEnd = cursor.plusDays(1).atStartOfDay(zone).toInstant()
+
+                val dayStepRecords = stepRecords.filter {
+                    it.startTime.atZone(zone).toLocalDate() == cursor
+                }
+
+                // Single-source deduplicated count (max across dataOrigin packages)
+                val maxSingleSourceSteps = dayStepRecords
+                    .groupBy { it.metadata.dataOrigin.packageName }
+                    .mapValues { (_, list) -> mergeAndSumStepIntervals(list) }
+                    .values
+                    .maxOrNull() ?: 0
+
+                val aggregatedSteps = runCatching {
+                    client.aggregate(
+                        AggregateRequest(
+                            metrics = setOf(StepsRecord.COUNT_TOTAL),
+                            timeRangeFilter = TimeRangeFilter.between(dayStart, dayEnd)
+                        )
+                    )[StepsRecord.COUNT_TOTAL]?.toInt()
+                }.getOrNull() ?: 0
+
+                // If aggregate is inflated by non-overlapping duplicate app syncs, prefer maxSingleSourceSteps
+                val totalSteps = when {
+                    aggregatedSteps in 1..maxSingleSourceSteps -> aggregatedSteps
+                    maxSingleSourceSteps > 0 && aggregatedSteps > (maxSingleSourceSteps * 1.25).toInt() -> maxSingleSourceSteps
+                    aggregatedSteps > 0 -> aggregatedSteps
+                    else -> maxSingleSourceSteps
+                }
 
                 if (totalSteps > 0) {
-                    val bonusSteps = (nonSessionSteps - com.minsoo.slimtrack.domain.CalorieEngine.BASELINE_STEPS_INCLUDED_IN_TDEE)
+                    val bonusSteps = (totalSteps - CalorieEngine.BASELINE_STEPS_INCLUDED_IN_TDEE)
                         .coerceAtLeast(0)
-                    val bonusKcal = com.minsoo.slimtrack.domain.CalorieEngine.computeBonusStepsKcal(
-                        totalSteps = nonSessionSteps,
+                    val bonusKcal = CalorieEngine.computeBonusStepsKcal(
+                        totalSteps = totalSteps,
                         weightKg = currentWeightKg
                     )
                     result += ExerciseEntity(
@@ -163,37 +230,45 @@ class HealthConnectRepository(private val context: Context) {
                         dateIso = dateIso,
                         exerciseType = "일일 걸음수(방식A)",
                         title = "도보 ${totalSteps}보 (4,000보 초과 ${bonusSteps}보)",
-                        durationMinutes = (totalSteps / 100).coerceAtLeast(1),
+                        durationMinutes = 0,
                         activeKcal = bonusKcal,
                         steps = totalSteps,
                         source = "HC_STEPS"
                     )
                 }
-            }
 
-            // Fallback: if a day has neither ExerciseSessionRecord nor StepsRecord, check ActiveCaloriesBurnedRecord
-            val coveredDates = result.map { it.dateIso }.toSet()
-            val byDate = activeCalories.groupBy { it.startTime.atZone(zone).toLocalDate().toString() }
-            for ((dateIso, records) in byDate) {
-                if (dateIso !in coveredDates) {
-                    val kcal = records.sumOf { it.energy.inKilocalories }.roundToInt()
-                    if (kcal >= 30) {
-                        result += ExerciseEntity(
-                            hcId = "active-kcal-$dateIso",
-                            dateIso = dateIso,
-                            exerciseType = "일상 활동 소모",
-                            title = "Health Connect 활동 칼로리",
-                            durationMinutes = 30,
-                            activeKcal = kcal,
-                            steps = 0,
-                            source = "HC"
-                        )
-                    }
-                }
+                cursor = cursor.plusDays(1)
             }
 
             result
         }.getOrDefault(emptyList())
+    }
+
+    /**
+     * Merges overlapping StepsRecord intervals within a single data source package
+     * so overlapping time windows from the same app are never counted twice.
+     */
+    private fun mergeAndSumStepIntervals(records: List<StepsRecord>): Int {
+        if (records.isEmpty()) return 0
+        val sorted = records.sortedBy { it.startTime }
+        var total = 0L
+        var lastEnd = java.time.Instant.MIN
+        for (r in sorted) {
+            if (r.endTime <= lastEnd) {
+                continue
+            }
+            if (r.startTime < lastEnd) {
+                val fullDur = Duration.between(r.startTime, r.endTime).toMillis().coerceAtLeast(1L)
+                val nonOverlapDur = Duration.between(lastEnd, r.endTime).toMillis().coerceAtLeast(0L)
+                total += (r.count * nonOverlapDur) / fullDur
+            } else {
+                total += r.count
+            }
+            if (r.endTime > lastEnd) {
+                lastEnd = r.endTime
+            }
+        }
+        return total.toInt()
     }
 
     /**

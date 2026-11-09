@@ -137,20 +137,18 @@ object CalorieEngine {
     }
 
     /**
-     * Net daily balance relative to target deficit:
-     *Actual deficit = (tdee + exerciseKcal - totalIntakeKcal)
-     *Balance = actualDeficit - deficitTarget
-     * Equivalently: (recommendedIntake - exerciseTarget + exerciseKcal - totalIntakeKcal)
-     * + means user saved MORE calories than target (good / surplus deficit).
-     * - means user ate more / exercised less than target (shortfall).
+     * Remaining intakeable calories for the day:
+     * Formula: recommendedIntake - totalIntakeKcal + exerciseKcal
+     * Example: Recommended 1834 kcal - Actual Intake 1055 kcal + Exercise 158 kcal = 937 kcal remaining.
+     * Positive means calories still available to eat today (displayed without '+' sign).
+     * Negative means calories exceeded today (displayed with '-' sign).
      */
     fun balance(
         plan: DailyPlan,
         totalIntakeKcal: Int,
         exerciseKcal: Int
     ): Int {
-        val actualDeficit = plan.tdee + exerciseKcal - totalIntakeKcal
-        return actualDeficit - plan.deficitTarget
+        return plan.recommendedIntake - totalIntakeKcal + exerciseKcal
     }
 
     fun evaluateDay(
