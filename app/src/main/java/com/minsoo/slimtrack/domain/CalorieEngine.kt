@@ -163,9 +163,9 @@ object CalorieEngine {
             return DayEvaluation(
                 date = input.date,
                 plan = plan,
-                totalIntakeKcal = 0,
+                totalIntakeKcal = input.drinkIntakeKcal,
                 mealIntakeKcal = 0,
-                drinkIntakeKcal = 0,
+                drinkIntakeKcal = input.drinkIntakeKcal,
                 exerciseKcal = 0,
                 hasMealLogged = false,
                 netBalanceKcal = 0,

@@ -64,6 +64,7 @@ import com.minsoo.slimtrack.data.repo.DashboardState
 import com.minsoo.slimtrack.domain.DayEvaluation
 import com.minsoo.slimtrack.domain.DayStatusColor
 import com.minsoo.slimtrack.domain.PeriodRollup
+import com.minsoo.slimtrack.ui.meal.ExpandableMealAccordionCard
 import com.minsoo.slimtrack.ui.theme.StatusGrayBg
 import com.minsoo.slimtrack.ui.theme.StatusGrayBorder
 import com.minsoo.slimtrack.ui.theme.StatusGrayText
@@ -467,41 +468,75 @@ private fun CalendarCard(
     onNextMonth: () -> Unit,
     onSelectDate: (LocalDate) -> Unit
 ) {
+    val monthlyDrinkDaysCount = evaluations.values.count { it.drinkIntakeKcal > 0 }
+    val monthlyDrinkTotalKcal = evaluations.values.sumOf { it.drinkIntakeKcal }
+
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Top Header Row: Month Navigation on Left + Monthly Drink Count Badge on Right Corner!
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onPrevMonth, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.ChevronLeft, contentDescription = "이전 달")
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    IconButton(onClick = onPrevMonth, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.ChevronLeft, contentDescription = "이전 달")
+                    }
+                    Text(
+                        text = "${yearMonth.year}년 ${yearMonth.monthValue}월 캘린더",
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    IconButton(onClick = onNextMonth, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.ChevronRight, contentDescription = "다음 달")
+                    }
                 }
-                Text(
-                    text = "${yearMonth.year}년 ${yearMonth.monthValue}월 목표 캘린더 (시작일: $effectiveStartDate)",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis
-                )
-                IconButton(onClick = onNextMonth, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Default.ChevronRight, contentDescription = "다음 달")
+
+                // Top-Right Corner Monthly Alcohol Count Badge
+                val drinkBadgeBg = if (monthlyDrinkDaysCount > 0) StatusRedBg else StatusGreenBg
+                val drinkBadgeBorder = if (monthlyDrinkDaysCount > 0) StatusRedBorder else StatusGreenBorder
+                val drinkBadgeFg = if (monthlyDrinkDaysCount > 0) StatusRedText else StatusGreenText
+                Surface(
+                    color = drinkBadgeBg,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.border(1.dp, drinkBadgeBorder, RoundedCornerShape(12.dp))
+                ) {
+                    Text(
+                        text = if (monthlyDrinkTotalKcal > 0) {
+                            "🍺 월 ${monthlyDrinkDaysCount}회 (${monthlyDrinkTotalKcal}kcal)"
+                        } else {
+                            "🍺 월 ${monthlyDrinkDaysCount}회 음주"
+                        },
+                        color = drinkBadgeFg,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
                 }
             }
 
-            // Legend (compact single line)
+            // Legend (compact single line including 🍺 음주일)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                LegendChip("🟢 달성(잔여)", StatusGreenBg, StatusGreenText)
-                LegendChip("🟡 허용(-150)", StatusYellowBg, StatusYellowText)
+                LegendChip("🟢 달성", StatusGreenBg, StatusGreenText)
+                LegendChip("🟡 허용", StatusYellowBg, StatusYellowText)
                 LegendChip("🔴 초과/✕미기록", StatusRedBg, StatusRedText)
+                LegendChip("🍺 음주일", StatusRedBg, StatusRedText)
                 LegendChip("⚪ 시작전/미래", StatusGrayBg, StatusGrayText)
             }
 
@@ -625,6 +660,7 @@ private fun CalendarDayCell(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
         ) {
+            val hasDrink = (evaluation?.drinkIntakeKcal ?: 0) > 0
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
@@ -638,7 +674,16 @@ private fun CalendarDayCell(
                     maxLines = 1,
                     softWrap = false
                 )
-                if (hasWeightDot) {
+                if (hasDrink) {
+                    Spacer(Modifier.width(1.dp))
+                    Text(
+                        text = "🍺",
+                        fontSize = 8.5.sp,
+                        lineHeight = 10.sp,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                } else if (hasWeightDot) {
                     Spacer(Modifier.width(2.dp))
                     Box(
                         modifier = Modifier
@@ -823,50 +868,18 @@ private fun SelectedDateDetailCard(
             } else {
                 if (meals.isNotEmpty()) {
                     Text(
-                        text = "🍽 식사 & 안주 (${meals.size}건 · 총 ${meals.sumOf { it.totalKcal }}kcal)",
+                        text = "🍽 식사 & 안주 (${meals.size}건 · 총 ${meals.sumOf { it.totalKcal }}kcal · 터치 시 상세 펼침)",
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
                         maxLines = 1,
                         softWrap = false
                     )
                     meals.forEach { m ->
-                        val typeLabel = runCatching { MealType.valueOf(m.mealType).labelKo }.getOrDefault(m.mealType)
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Restaurant,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(Modifier.width(5.dp))
-                                    Text(
-                                        text = "[$typeLabel] ${m.totalKcal}kcal (단백질 ${m.proteinGrams.toInt()}g) ${m.notes}",
-                                        fontSize = 11.5.sp,
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                                Spacer(Modifier.width(6.dp))
-                                DeletePillButton(onClick = { onDeleteMeal(m) })
-                            }
-                        }
+                        ExpandableMealAccordionCard(
+                            meal = m,
+                            initiallyExpanded = false,
+                            onDeleteMeal = { onDeleteMeal(m) }
+                        )
                     }
                 }
 

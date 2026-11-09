@@ -86,7 +86,8 @@ class SlimTrackScreenshotTest {
         for (d in 1..ym.lengthOfMonth()) {
             val date = ym.atDay(d)
             val input = when (d) {
-                9 -> DayRecordInput(date, 1055, 0, 241, 1) // Today: 1834 - 1055 + 241(운동158+도보83) = 1020 kcal remaining
+                8 -> DayRecordInput(date, 1600, 137, 200, 3) // Day 8: had alcohol (137 kcal) -> shows 🍺 in calendar!
+                9 -> DayRecordInput(date, 1055, 0, 241, 1)   // Today: 1834 - 1055 + 241(운동158+도보83) = 1020 kcal remaining
                 else -> DayRecordInput(date, 0, 0, 0, 0)
             }
             evals[date] = CalorieEngine.evaluateDay(
@@ -188,10 +189,12 @@ class SlimTrackScreenshotTest {
                             dateIso = "2026-11-09",
                             mealType = "LUNCH",
                             photoUri = "",
-                            itemsJson = "[{\"name\":\"다양한 단백질원 정식\",\"portion\":\"1인분\",\"kcal\":1055,\"proteinGrams\":55.0}]",
+                            itemsJson = "[{\"name\":\"소고기 등심 구이\",\"portion\":\"1인분(200g)\",\"kcal\":620,\"proteinGrams\":42.0,\"carbsGrams\":4.0,\"fatGrams\":46.0},{\"name\":\"닭가슴살 두부 샐러드\",\"portion\":\"1접시\",\"kcal\":435,\"proteinGrams\":33.0,\"carbsGrams\":28.0,\"fatGrams\":14.0}]",
                             totalKcal = 1055,
-                            proteinGrams = 55f,
-                            notes = "다양한 단백질원 정식"
+                            proteinGrams = 75f,
+                            carbsGrams = 32f,
+                            fatGrams = 60f,
+                            notes = "고단백 정식 (등심 + 닭가슴살 샐러드)"
                         )
                     ),
                     todayDrinks = listOf(DrinkEntity(1, "2026-11-09", "SOJU", "소주: 50ml * 16.5% * 3잔", 150, 16.5f, 137)),

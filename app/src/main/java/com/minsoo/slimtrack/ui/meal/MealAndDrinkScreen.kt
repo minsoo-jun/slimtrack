@@ -1,5 +1,6 @@
 package com.minsoo.slimtrack.ui.meal
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,6 +23,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.LocalBar
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -211,59 +214,20 @@ fun MealAndDrinkScreen(
                         overflow = TextOverflow.Ellipsis
                     )
                 } else {
-                    todayMeals.forEach { meal ->
-                        val mealTypeEnum = runCatching { MealType.valueOf(meal.mealType) }.getOrNull()
-                        val typeTitle = mealTypeEnum?.let { "${it.emoji} ${it.labelKo}" } ?: meal.mealType
-                        val parsedItems = remember(meal.itemsJson) {
-                            runCatching { itemJsonParser.decodeFromString<List<FoodItemEntry>>(meal.itemsJson) }
-                                .getOrDefault(emptyList())
-                        }
-                        val itemsSummary = if (parsedItems.isNotEmpty()) {
-                            parsedItems.joinToString(", ") { "${it.name}(${it.kcal}kcal)" }
-                        } else {
-                            meal.notes
-                        }
-
-                        Surface(
-                            color = MaterialTheme.colorScheme.surfaceVariant,
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                                ) {
-                                    Text(
-                                        text = "[$typeTitle] ${meal.totalKcal} kcal (단백질 ${meal.proteinGrams.toInt()}g)",
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = Color(0xFF0F172A),
-                                        maxLines = 1,
-                                        softWrap = false,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    if (itemsSummary.isNotBlank()) {
-                                        Text(
-                                            text = itemsSummary,
-                                            fontSize = 11.sp,
-                                            color = Color(0xFF475569),
-                                            maxLines = 1,
-                                            softWrap = false,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                                Spacer(Modifier.width(8.dp))
-                                DeleteRecordButton(onClick = { onDeleteMeal(meal) })
-                            }
-                        }
+                    Text(
+                        text = "💡 식단 항목을 터치하면 세부 음식 및 영양성분(탄·단·지)이 아코디언으로 펼쳐집니다.",
+                        fontSize = 10.5.sp,
+                        color = Color(0xFF475569),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    todayMeals.forEachIndexed { idx, meal ->
+                        ExpandableMealAccordionCard(
+                            meal = meal,
+                            initiallyExpanded = idx == 0,
+                            onDeleteMeal = { onDeleteMeal(meal) }
+                        )
                     }
                 }
             }
@@ -814,6 +778,186 @@ fun MealAndDrinkScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+fun ExpandableMealAccordionCard(
+    meal: MealEntity,
+    initiallyExpanded: Boolean = false,
+    onDeleteMeal: () -> Unit
+) {
+    var expanded by remember(meal.id) { mutableStateOf(initiallyExpanded) }
+    val mealTypeEnum = runCatching { MealType.valueOf(meal.mealType) }.getOrNull()
+    val typeTitle = mealTypeEnum?.let { "${it.emoji} ${it.labelKo}" } ?: meal.mealType
+    val parsedItems = remember(meal.itemsJson) {
+        runCatching { itemJsonParser.decodeFromString<List<FoodItemEntry>>(meal.itemsJson) }
+            .getOrDefault(emptyList())
+    }
+    val summaryLine = if (parsedItems.isNotEmpty()) {
+        parsedItems.joinToString(", ") { "${it.name}(${it.kcal}kcal)" }
+    } else {
+        meal.notes
+    }
+
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(
+                width = if (expanded) 1.5.dp else 1.dp,
+                color = if (expanded) MaterialTheme.colorScheme.primary else Color(0xFFCBD5E1),
+                shape = RoundedCornerShape(10.dp)
+            )
+            .clickable { expanded = !expanded }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            // Accordion Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "[$typeTitle] ${meal.totalKcal} kcal (단백질 ${meal.proteinGrams.toInt()}g)",
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color(0xFF0F172A),
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (expanded) "접기" else "상세 펼치기",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    if (!expanded && summaryLine.isNotBlank()) {
+                        Text(
+                            text = summaryLine,
+                            fontSize = 11.sp,
+                            color = Color(0xFF475569),
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                DeleteRecordButton(onClick = onDeleteMeal)
+            }
+
+            // Accordion Expanded Detail Section
+            AnimatedVisibility(visible = expanded) {
+                Surface(
+                    color = Color.White,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(8.dp))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        // Macro nutrient summary badges
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            MacroBadgeChip("열량", "${meal.totalKcal}kcal", MaterialTheme.colorScheme.primary)
+                            MacroBadgeChip("단백질", "${meal.proteinGrams.toInt()}g", StatusGreenText)
+                            MacroBadgeChip("탄수화물", "${meal.carbsGrams.toInt()}g", Color(0xFF0284C7))
+                            MacroBadgeChip("지방", "${meal.fatGrams.toInt()}g", Color(0xFFD97706))
+                        }
+
+                        HorizontalDivider(color = Color(0xFFE2E8F0))
+
+                        Text(
+                            text = "📋 상세 음식 품목 (${if (parsedItems.isNotEmpty()) parsedItems.size else 1}개)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF334155),
+                            maxLines = 1,
+                            softWrap = false
+                        )
+
+                        if (parsedItems.isNotEmpty()) {
+                            parsedItems.forEach { item ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "• ${item.name} (${item.portion})",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFF0F172A),
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        text = "${item.kcal}kcal (단${item.proteinGrams.toInt()}·탄${item.carbsGrams.toInt()}·지${item.fatGrams.toInt()}g)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                            }
+                        } else {
+                            Text(
+                                text = "• ${meal.notes.ifBlank { typeTitle }} — ${meal.totalKcal} kcal",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF0F172A)
+                            )
+                        }
+
+                        if (meal.notes.isNotBlank()) {
+                            Text(
+                                text = "💬 메모: ${meal.notes}",
+                                fontSize = 10.5.sp,
+                                color = Color(0xFF64748B),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MacroBadgeChip(
+    label: String,
+    value: String,
+    color: Color
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(text = label, fontSize = 9.5.sp, color = Color(0xFF64748B), maxLines = 1, softWrap = false)
+        Text(text = value, fontSize = 11.5.sp, fontWeight = FontWeight.ExtraBold, color = color, maxLines = 1, softWrap = false)
     }
 }
 
