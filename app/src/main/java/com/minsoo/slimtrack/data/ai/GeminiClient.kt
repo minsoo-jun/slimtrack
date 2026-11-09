@@ -2,6 +2,8 @@ package com.minsoo.slimtrack.data.ai
 
 import android.util.Base64
 import com.minsoo.slimtrack.data.db.FoodItemEntry
+import com.minsoo.slimtrack.data.prefs.Gemini3Catalog
+import com.minsoo.slimtrack.data.prefs.GeminiModelOption
 import com.minsoo.slimtrack.domain.AdviceVerdict
 import com.minsoo.slimtrack.domain.BmrCalculator
 import kotlinx.coroutines.Dispatchers
@@ -10,7 +12,6 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -23,7 +24,6 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
 import java.util.concurrent.TimeUnit
-import kotlin.math.roundToInt
 
 @Serializable
 data class MealAnalysisResponse(
@@ -74,10 +74,6 @@ data class InBodyOcrResponse(
     fun normalizedDateIso(): String = normalizedMeasuredAtIso().substringBefore("T")
 
     companion object {
-        /**
-         * Parses Korean InBody app timestamp format such as "26.11.07(토) 11:44"
-         * or ISO "2026-11-07T11:44" into "2026-11-07T11:44".
-         */
         fun normalizeInBodyTimestamp(raw: String): String {
             val trimmed = raw.trim()
             val isoRegex = Regex("""(\d{4})[-.](\d{2})[-.](\d{2})[T\s]+(\d{2}):(\d{2})""")
@@ -121,6 +117,75 @@ class GeminiClient(
         coerceInputValues = true
     }
 
+    /**
+     * Queries GET /v1beta/models?key=... and returns all available Gemini 3.x models
+     * that support generateContent. Falls back to Gemini3Catalog.presetModels if none are returned.
+     */
+    suspend fun fetchAvailableGemini3Models(apiKey: String): Result<List<GeminiModelOption>> =
+        withContext(Dispatchers.IO) {
+            if (apiKey.isBlank()) {
+                return@withContext Result.failure(IllegalStateException("먼저 Gemini API 키를 입력해주세요."))
+            }
+            runCatching {
+                val url = "${baseUrl.trimEnd('/')}/v1beta/models?key=${apiKey.trim()}"
+                val request = Request.Builder().url(url).get().build()
+                httpClient.newCall(request).execute().use { response ->
+                    val respBody = response.body?.string().orEmpty()
+                    if (!response.isSuccessful) {
+                        throw IOException("모델 목록 조회 실패 (HTTP ${response.code}): ${respBody.take(160)}")
+                    }
+                    parseGemini3ModelsFromListResponse(respBody)
+                }
+            }
+        }
+
+    fun parseGemini3ModelsFromListResponse(rawJson: String): List<GeminiModelOption> {
+        val root = json.parseToJsonElement(rawJson).jsonObject
+        val modelsArr = root["models"]?.jsonArray ?: return Gemini3Catalog.presetModels
+        val discovered = mutableListOf<GeminiModelOption>()
+
+        for (elem in modelsArr) {
+            val obj = elem.jsonObject
+            val rawName = obj["name"]?.jsonPrimitive?.content.orEmpty()
+            val id = rawName.removePrefix("models/")
+            if (!id.startsWith("gemini-3")) continue
+
+            val methods = obj["supportedGenerationMethods"]?.jsonArray
+                ?.mapNotNull { it.jsonPrimitive.content }
+                .orEmpty()
+            if (methods.isNotEmpty() && "generateContent" !in methods) continue
+
+            val displayName = obj["displayName"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: id
+            val description = obj["description"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+                ?: "API에서 확인된 사용 가능 Gemini 3.x 모델"
+            val badge = when {
+                id.contains("flash-lite") -> "3.x Lite"
+                id.contains("flash") -> "3.x Flash"
+                id.contains("pro") -> "3.x Pro"
+                else -> "Gemini 3.x"
+            }
+            discovered += GeminiModelOption(
+                id = id,
+                titleKo = displayName,
+                badgeKo = badge,
+                descKo = description.take(60)
+            )
+        }
+
+        if (discovered.isEmpty()) return Gemini3Catalog.presetModels
+        // Sort so flash models come first (fastest for meal/OCR), then pro
+        return discovered.sortedWith(
+            compareBy<GeminiModelOption> {
+                when {
+                    it.id == "gemini-3-flash-preview" -> 0
+                    it.id.contains("flash") && !it.id.contains("lite") -> 1
+                    it.id.contains("pro") -> 2
+                    else -> 3
+                }
+            }.thenBy { it.id }
+        )
+    }
+
     suspend fun analyzeMealPhoto(
         apiKey: String,
         model: String,
@@ -139,9 +204,9 @@ class GeminiClient(
                 {"items":[{"name":"음식명","portion":"분량","kcal":450,"protein_g":25.0,"carbs_g":30.0,"fat_g":18.0}],"total_kcal":450,"confidence":0.85,"notes":"참고 설명"}
             """.trimIndent()
 
-            val responseText = callGenerateContent(
+            val responseText = callGenerateContentWith3xFallback(
                 apiKey = apiKey,
-                model = model,
+                preferredModel = model,
                 prompt = prompt,
                 base64Jpeg = base64Image
             )
@@ -178,9 +243,9 @@ class GeminiClient(
                 {"measured_at":"26.11.07(토) 11:44","device":"인바디570","weight_kg":98.9,"skeletal_muscle_kg":38.5,"body_fat_mass_kg":31.1,"body_fat_pct":31.4,"ecw_ratio":0.374,"bmi":31.9,"visceral_fat_level":12,"bmr_reported":null}
             """.trimIndent()
 
-            val responseText = callGenerateContent(
+            val responseText = callGenerateContentWith3xFallback(
                 apiKey = apiKey,
-                model = model,
+                preferredModel = model,
                 prompt = prompt,
                 base64Jpeg = base64Image,
                 mimeType = mimeType
@@ -214,9 +279,9 @@ class GeminiClient(
                 $verdictJsonStr
             """.trimIndent()
 
-            val responseText = callGenerateContent(
+            val responseText = callGenerateContentWith3xFallback(
                 apiKey = apiKey,
-                model = model,
+                preferredModel = model,
                 prompt = prompt,
                 base64Jpeg = null
             )
@@ -252,6 +317,44 @@ class GeminiClient(
             return stripped.substring(start, end + 1)
         }
         throw IllegalArgumentException("유효한 JSON 응답을 찾을 수 없습니다: ${rawText.take(120)}")
+    }
+
+    /**
+     * Calls generateContent with the user's selected Gemini 3.x model.
+     * If the selected model returns HTTP 404 (e.g. preview alias changed), automatically
+     * tries the remaining Gemini 3.x candidates so the user never gets stuck.
+     */
+    private fun callGenerateContentWith3xFallback(
+        apiKey: String,
+        preferredModel: String,
+        prompt: String,
+        base64Jpeg: String?,
+        mimeType: String = "image/jpeg"
+    ): String {
+        val primary = Gemini3Catalog.ensureGemini3Model(preferredModel)
+        val candidates = (listOf(primary) + Gemini3Catalog.presetModels.map { it.id }).distinct()
+        var lastError: Throwable? = null
+
+        for (candidateModel in candidates) {
+            try {
+                return callGenerateContent(
+                    apiKey = apiKey,
+                    model = candidateModel,
+                    prompt = prompt,
+                    base64Jpeg = base64Jpeg,
+                    mimeType = mimeType
+                )
+            } catch (e: IOException) {
+                lastError = e
+                // Only fallback to next 3.x candidate if model was not found (404) or unsupported (400)
+                if (e.message?.contains("HTTP 404") == true || e.message?.contains("not found") == true) {
+                    continue
+                } else {
+                    throw e
+                }
+            }
+        }
+        throw lastError ?: IOException("사용 가능한 Gemini 3.x 모델을 찾을 수 없습니다.")
     }
 
     private fun callGenerateContent(
@@ -294,15 +397,15 @@ class GeminiClient(
             )
         }
 
-        val cleanModel = model.removePrefix("models/").ifBlank { "gemini-2.5-flash" }
-        val url = "${baseUrl.trimEnd('/')}/v1beta/models/$cleanModel:generateContent?key=$apiKey"
+        val cleanModel = Gemini3Catalog.ensureGemini3Model(model)
+        val url = "${baseUrl.trimEnd('/')}/v1beta/models/$cleanModel:generateContent?key=${apiKey.trim()}"
         val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
         val request = Request.Builder().url(url).post(body).build()
 
         httpClient.newCall(request).execute().use { response ->
             val respBody = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                throw IOException("Gemini API 오류 (HTTP ${response.code}): ${respBody.take(200)}")
+                throw IOException("Gemini API 오류 (HTTP ${response.code}, 모델 $cleanModel): ${respBody.take(200)}")
             }
             val root = json.parseToJsonElement(respBody).jsonObject
             val candidates = root["candidates"]?.jsonArray

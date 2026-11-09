@@ -1,9 +1,12 @@
 package com.minsoo.slimtrack.ui.meal
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,7 +30,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -38,14 +40,15 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.minsoo.slimtrack.data.db.DrinkEntity
@@ -57,10 +60,10 @@ import com.minsoo.slimtrack.domain.AlcoholPreset
 import com.minsoo.slimtrack.ui.theme.StatusGreenBg
 import com.minsoo.slimtrack.ui.theme.StatusGreenText
 import com.minsoo.slimtrack.ui.theme.StatusRedBg
+import com.minsoo.slimtrack.ui.theme.StatusRedBorder
 import com.minsoo.slimtrack.ui.theme.StatusRedText
 import java.time.LocalDate
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MealAndDrinkScreen(
     selectedDate: LocalDate,
@@ -101,13 +104,16 @@ fun MealAndDrinkScreen(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = "🍽 $selectedDate 식단 · 회식(술/안주) · 운동 기록",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
+            text = "🍽 $selectedDate 식단 · 회식(술/안주) · 운동",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis
         )
 
         // Section 1: Meal & Anju Photo Calorie Analysis
@@ -116,31 +122,46 @@ fun MealAndDrinkScreen(
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "📸 매일 3식 및 회식 안주 사진 칼로리 계산",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "아침·점심·저녁 식사 또는 회식 안주를 사진으로 촬영/선택하면 Gemini Vision이 음식별 칼로리와 단백질을 자동 계산합니다.",
-                    fontSize = 12.sp,
-                    color = Color(0xFF475569)
+                    text = "📸 매일 3식 & 회식 안주 사진 칼로리 계산",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false
                 )
 
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                // 5 MealType chips in a single equal-width row (never wraps!)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     MealType.entries.forEach { type ->
-                        FilterChip(
-                            selected = selectedMealType == type,
-                            onClick = { onSelectMealType(type) },
-                            label = { Text("${type.emoji} ${type.labelKo}") }
-                        )
+                        val isSelected = selectedMealType == type
+                        val bg = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+                        val fg = if (isSelected) Color.White else Color(0xFF334155)
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(bg)
+                                .clickable { onSelectMealType(type) }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "${type.emoji}${type.labelKo}",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = fg,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
                     }
                 }
 
+                // Camera & Gallery buttons (concise single-line labels)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -148,30 +169,49 @@ fun MealAndDrinkScreen(
                     Button(
                         onClick = onTakePhotoClick,
                         enabled = !isAnalyzingPhoto,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("${selectedMealType.labelKo} 카메라 촬영")
+                        Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            text = "${selectedMealType.labelKo} 촬영",
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
                     }
                     OutlinedButton(
                         onClick = onPickPhotoClick,
                         enabled = !isAnalyzingPhoto,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("갤러리 사진 선택")
+                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            text = "앨범에서 선택",
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
                     }
                 }
 
                 if (isAnalyzingPhoto) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                        Text("Gemini Vision으로 음식 사진 칼로리 분석 중...", fontSize = 13.sp)
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text(
+                            text = "Gemini 3.x Vision으로 칼로리 분석 중...",
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            softWrap = false
+                        )
                     }
                 }
 
@@ -183,59 +223,74 @@ fun MealAndDrinkScreen(
                     ) {
                         Text(
                             text = analysisStatusMessage,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(10.dp)
+                            fontSize = 11.5.sp,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
                         )
                     }
                 }
 
                 HorizontalDivider()
                 Text(
-                    text = "품목 확인 및 직접 추가 (편집 가능)",
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp
+                    text = "품목 확인 및 직접 추가",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.5.sp,
+                    maxLines = 1,
+                    softWrap = false
                 )
 
                 stagedItems.forEachIndexed { index, item ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        OutlinedTextField(
-                            value = item.name,
-                            onValueChange = { onUpdateStagedItem(index, item.copy(name = it)) },
-                            label = { Text("음식명") },
-                            modifier = Modifier.weight(1.3f),
-                            singleLine = true
-                        )
-                        OutlinedTextField(
-                            value = item.kcal.toString(),
-                            onValueChange = { v ->
-                                val k = v.toIntOrNull() ?: 0
-                                onUpdateStagedItem(index, item.copy(kcal = k))
-                            },
-                            label = { Text("kcal") },
-                            modifier = Modifier.weight(0.9f),
-                            singleLine = true
-                        )
-                        OutlinedTextField(
-                            value = item.proteinGrams.toInt().toString(),
-                            onValueChange = { v ->
-                                val p = v.toFloatOrNull() ?: 0f
-                                onUpdateStagedItem(index, item.copy(proteinGrams = p))
-                            },
-                            label = { Text("단백(g)") },
-                            modifier = Modifier.weight(0.8f),
-                            singleLine = true
-                        )
-                        IconButton(onClick = { onRemoveStagedItem(index) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "삭제")
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = item.name,
+                                onValueChange = { onUpdateStagedItem(index, item.copy(name = it)) },
+                                label = { Text("음식명", fontSize = 10.sp, maxLines = 1, softWrap = false) },
+                                modifier = Modifier.weight(1.4f),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = item.kcal.toString(),
+                                onValueChange = { v ->
+                                    val k = v.toIntOrNull() ?: 0
+                                    onUpdateStagedItem(index, item.copy(kcal = k))
+                                },
+                                label = { Text("kcal", fontSize = 10.sp, maxLines = 1, softWrap = false) },
+                                modifier = Modifier.weight(0.9f),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = item.proteinGrams.toInt().toString(),
+                                onValueChange = { v ->
+                                    val p = v.toFloatOrNull() ?: 0f
+                                    onUpdateStagedItem(index, item.copy(proteinGrams = p))
+                                },
+                                label = { Text("단백(g)", fontSize = 10.sp, maxLines = 1, softWrap = false) },
+                                modifier = Modifier.weight(0.8f),
+                                singleLine = true
+                            )
+                            IconButton(
+                                onClick = { onRemoveStagedItem(index) },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "삭제", modifier = Modifier.size(18.dp))
+                            }
                         }
                     }
                 }
 
-                // Quick manual item add row
+                // Clean single-line manual food entry row (short labels that never wrap!)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -244,64 +299,68 @@ fun MealAndDrinkScreen(
                     OutlinedTextField(
                         value = manualFoodName,
                         onValueChange = { manualFoodName = it },
-                        label = { Text("음식/안주 직접입력") },
-                        modifier = Modifier.weight(1.3f),
+                        label = { Text("음식명 입력", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
+                        modifier = Modifier.weight(1.4f),
                         singleLine = true
                     )
                     OutlinedTextField(
                         value = manualFoodKcal,
                         onValueChange = { manualFoodKcal = it },
-                        label = { Text("kcal") },
-                        modifier = Modifier.weight(0.9f),
+                        label = { Text("kcal", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
+                        modifier = Modifier.weight(0.85f),
                         singleLine = true
                     )
                     OutlinedTextField(
                         value = manualFoodProtein,
                         onValueChange = { manualFoodProtein = it },
-                        label = { Text("단백(g)") },
-                        modifier = Modifier.weight(0.8f),
+                        label = { Text("단백(g)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
+                        modifier = Modifier.weight(0.75f),
                         singleLine = true
                     )
-                    IconButton(
-                        onClick = {
-                            val k = manualFoodKcal.toIntOrNull() ?: 0
-                            val p = manualFoodProtein.toFloatOrNull() ?: 0f
-                            if (manualFoodName.isNotBlank() && k > 0) {
-                                onAddManualFoodItem(
-                                    FoodItemEntry(
-                                        name = manualFoodName.trim(),
-                                        kcal = k,
-                                        proteinGrams = p
+                    Surface(
+                        color = MaterialTheme.colorScheme.primary,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clickable {
+                                val k = manualFoodKcal.toIntOrNull() ?: 0
+                                val p = manualFoodProtein.toFloatOrNull() ?: 0f
+                                if (manualFoodName.isNotBlank() && k > 0) {
+                                    onAddManualFoodItem(
+                                        FoodItemEntry(
+                                            name = manualFoodName.trim(),
+                                            kcal = k,
+                                            proteinGrams = p
+                                        )
                                     )
-                                )
-                                manualFoodName = ""
-                                manualFoodKcal = ""
+                                    manualFoodName = ""
+                                    manualFoodKcal = ""
+                                }
                             }
-                        }
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = "품목 추가")
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Add, contentDescription = "추가", tint = Color.White)
+                        }
                     }
                 }
 
                 val stagedTotalKcal = stagedItems.sumOf { it.kcal }
                 val stagedTotalProtein = stagedItems.sumOf { it.proteinGrams.toDouble() }.toInt()
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+
+                // Full-width save bar (never wraps into 2 lines!)
+                Button(
+                    onClick = onSaveMeal,
+                    enabled = stagedItems.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "합계: ${stagedTotalKcal}kcal (단백질 ${stagedTotalProtein}g)",
+                        text = "${selectedMealType.labelKo} 기록 저장 · 합계 ${stagedTotalKcal}kcal (단백질 ${stagedTotalProtein}g)",
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.primary
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    Button(
-                        onClick = onSaveMeal,
-                        enabled = stagedItems.isNotEmpty()
-                    ) {
-                        Text("${selectedMealType.labelKo} 기록 저장 (${stagedTotalKcal}kcal)")
-                    }
                 }
             }
         }
@@ -312,68 +371,82 @@ fun MealAndDrinkScreen(
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.LocalBar, contentDescription = null, tint = StatusRedText)
+                    Icon(Icons.Default.LocalBar, contentDescription = null, tint = StatusRedText, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(
                         text = "🍺 회식 수동 음주량 칼로리 계산기",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false
                     )
                 }
-                Text(
-                    text = "공식: ml × 도수(%) × 0.789(g/ml) × 7kcal + 주종별 탄수화물 kcal. 안주는 위에서 [🍻 안주]를 선택해 사진으로 촬영하세요.",
-                    fontSize = 12.sp,
-                    color = Color(0xFF475569)
-                )
 
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    AlcoholPreset.entries.forEach { preset ->
-                        FilterChip(
-                            selected = selectedDrinkPreset == preset,
-                            onClick = {
-                                selectedDrinkPreset = preset
-                                drinkVolumeMl = preset.bottleVolumeMl.toString()
-                                drinkAbvText = preset.defaultAbvPct.toString()
-                            },
-                            label = { Text(preset.labelKo) }
-                        )
+                // Preset chips in 2 clean rows of equal-width boxes
+                val presetsRow1 = AlcoholPreset.entries.take(4)
+                val presetsRow2 = AlcoholPreset.entries.drop(4)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        presetsRow1.forEach { preset ->
+                            DrinkPresetChip(
+                                preset = preset,
+                                selected = selectedDrinkPreset == preset,
+                                onClick = {
+                                    selectedDrinkPreset = preset
+                                    drinkVolumeMl = preset.bottleVolumeMl.toString()
+                                    drinkAbvText = preset.defaultAbvPct.toString()
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        presetsRow2.forEach { preset ->
+                            DrinkPresetChip(
+                                preset = preset,
+                                selected = selectedDrinkPreset == preset,
+                                onClick = {
+                                    selectedDrinkPreset = preset
+                                    drinkVolumeMl = preset.bottleVolumeMl.toString()
+                                    drinkAbvText = preset.defaultAbvPct.toString()
+                                },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
                 }
 
-                // Quick unit buttons (1잔, 2잔, 1병/캔, 2병/캔)
+                // Quick volume tiles: Rectangular tiles with 2 clean lines ("1잔" / "50ml") -> NEVER splits "ml"!
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    OutlinedButton(
+                    QuickVolumeTile(
+                        topLabel = "1잔",
+                        mlValue = selectedDrinkPreset.unitVolumeMl,
                         onClick = { drinkVolumeMl = selectedDrinkPreset.unitVolumeMl.toString() },
                         modifier = Modifier.weight(1f)
-                    ) {
-                        Text("1잔(${selectedDrinkPreset.unitVolumeMl}ml)", fontSize = 11.sp)
-                    }
-                    OutlinedButton(
+                    )
+                    QuickVolumeTile(
+                        topLabel = "3잔",
+                        mlValue = selectedDrinkPreset.unitVolumeMl * 3,
                         onClick = { drinkVolumeMl = (selectedDrinkPreset.unitVolumeMl * 3).toString() },
                         modifier = Modifier.weight(1f)
-                    ) {
-                        Text("3잔(${selectedDrinkPreset.unitVolumeMl * 3}ml)", fontSize = 11.sp)
-                    }
-                    OutlinedButton(
+                    )
+                    QuickVolumeTile(
+                        topLabel = "1병/캔",
+                        mlValue = selectedDrinkPreset.bottleVolumeMl,
                         onClick = { drinkVolumeMl = selectedDrinkPreset.bottleVolumeMl.toString() },
                         modifier = Modifier.weight(1f)
-                    ) {
-                        Text("1병/캔(${selectedDrinkPreset.bottleVolumeMl}ml)", fontSize = 11.sp)
-                    }
-                    OutlinedButton(
+                    )
+                    QuickVolumeTile(
+                        topLabel = "2병/캔",
+                        mlValue = selectedDrinkPreset.bottleVolumeMl * 2,
                         onClick = { drinkVolumeMl = (selectedDrinkPreset.bottleVolumeMl * 2).toString() },
                         modifier = Modifier.weight(1f)
-                    ) {
-                        Text("2병/캔(${selectedDrinkPreset.bottleVolumeMl * 2}ml)", fontSize = 11.sp)
-                    }
+                    )
                 }
 
                 Row(
@@ -383,14 +456,14 @@ fun MealAndDrinkScreen(
                     OutlinedTextField(
                         value = drinkVolumeMl,
                         onValueChange = { drinkVolumeMl = it },
-                        label = { Text("마신 양 (ml)") },
+                        label = { Text("마신 양 (ml)", fontSize = 11.sp, maxLines = 1, softWrap = false) },
                         modifier = Modifier.weight(1f),
                         singleLine = true
                     )
                     OutlinedTextField(
                         value = drinkAbvText,
                         onValueChange = { drinkAbvText = it },
-                        label = { Text("도수 (%)") },
+                        label = { Text("도수 (%)", fontSize = 11.sp, maxLines = 1, softWrap = false) },
                         modifier = Modifier.weight(1f),
                         singleLine = true
                     )
@@ -403,28 +476,37 @@ fun MealAndDrinkScreen(
                 Surface(
                     color = StatusRedBg,
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, StatusRedBorder, RoundedCornerShape(8.dp))
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = "${selectedDrinkPreset.labelKo} ${vol}ml (${abv}%) = ${previewDrinkKcal}kcal",
-                            fontWeight = FontWeight.Bold,
-                            color = StatusRedText
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.sp,
+                            color = StatusRedText,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
                         )
+                        Spacer(Modifier.width(8.dp))
                         Button(
                             onClick = {
                                 if (vol > 0) {
                                     onAddDrink(selectedDrinkPreset, vol, abv.toFloat())
                                 }
-                            }
+                            },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
-                            Text("술 기록 추가")
+                            Text("술 추가", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                         }
                     }
                 }
@@ -437,33 +519,42 @@ fun MealAndDrinkScreen(
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.FitnessCenter, contentDescription = null, tint = StatusGreenText)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.FitnessCenter, contentDescription = null, tint = StatusGreenText, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = "🏃 Google Health Connect 운동 리스트",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            text = "🏃 Health Connect 운동 리스트",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                    OutlinedButton(onClick = onSyncHealthConnectExercises) {
-                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                    OutlinedButton(
+                        onClick = onSyncHealthConnectExercises,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("동기화", fontSize = 12.sp)
+                        Text("동기화", fontSize = 11.5.sp, maxLines = 1, softWrap = false)
                     }
                 }
 
                 if (todayExercises.isEmpty()) {
                     Text(
-                        text = "오늘 동기화된 운동 기록이 없습니다. Health Connect 동기화를 누르거나 아래에서 직접 추가하세요.",
-                        fontSize = 12.sp,
-                        color = Color(0xFF64748B)
+                        text = "동기화된 운동이 없습니다. 동기화하거나 아래에서 직접 추가하세요.",
+                        fontSize = 11.5.sp,
+                        color = Color(0xFF64748B),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
                     )
                 } else {
                     todayExercises.forEach { ex ->
@@ -473,20 +564,24 @@ fun MealAndDrinkScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
-                                modifier = Modifier.padding(10.dp),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "[${ex.source}] ${ex.title} · ${ex.durationMinutes}분",
-                                    fontSize = 13.sp,
+                                    text = "[${ex.source}] ${ex.title} (${ex.durationMinutes}분)",
+                                    fontSize = 12.sp,
                                     color = StatusGreenText,
-                                    fontWeight = FontWeight.Medium
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                                 Text(
                                     text = "+${ex.activeKcal} kcal",
-                                    fontSize = 13.sp,
+                                    fontSize = 12.sp,
                                     color = StatusGreenText,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.ExtraBold,
+                                    maxLines = 1,
+                                    softWrap = false
                                 )
                             }
                         }
@@ -494,7 +589,6 @@ fun MealAndDrinkScreen(
                 }
 
                 HorizontalDivider()
-                Text("운동 수동 입력 (보조)", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -503,22 +597,22 @@ fun MealAndDrinkScreen(
                     OutlinedTextField(
                         value = manualExTitle,
                         onValueChange = { manualExTitle = it },
-                        label = { Text("운동명") },
-                        modifier = Modifier.weight(1.2f),
+                        label = { Text("운동명", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
+                        modifier = Modifier.weight(1.3f),
                         singleLine = true
                     )
                     OutlinedTextField(
                         value = manualExMin,
                         onValueChange = { manualExMin = it },
-                        label = { Text("분") },
-                        modifier = Modifier.weight(0.7f),
+                        label = { Text("분", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
+                        modifier = Modifier.weight(0.65f),
                         singleLine = true
                     )
                     OutlinedTextField(
                         value = manualExKcal,
                         onValueChange = { manualExKcal = it },
-                        label = { Text("소모 kcal") },
-                        modifier = Modifier.weight(0.9f),
+                        label = { Text("kcal", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
+                        modifier = Modifier.weight(0.8f),
                         singleLine = true
                     )
                     Button(
@@ -528,12 +622,79 @@ fun MealAndDrinkScreen(
                             if (manualExTitle.isNotBlank() && kcal > 0) {
                                 onAddManualExercise(manualExTitle.trim(), min, kcal)
                             }
-                        }
+                        },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
                     ) {
-                        Text("추가")
+                        Text("추가", fontSize = 12.sp, maxLines = 1, softWrap = false)
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun DrinkPresetChip(
+    preset: AlcoholPreset,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val bg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+    val fg = if (selected) Color.White else Color(0xFF334155)
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(vertical = 7.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = preset.labelKo,
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.Bold,
+            color = fg,
+            maxLines = 1,
+            softWrap = false
+        )
+    }
+}
+
+@Composable
+private fun QuickVolumeTile(
+    topLabel: String,
+    mlValue: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(8.dp),
+        modifier = modifier
+            .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = topLabel,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                softWrap = false
+            )
+            Text(
+                text = "${mlValue}ml",
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF334155),
+                maxLines = 1,
+                softWrap = false
+            )
         }
     }
 }

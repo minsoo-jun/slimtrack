@@ -1,9 +1,17 @@
 package com.minsoo.slimtrack.ui
 
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.minsoo.slimtrack.MainTab
 import com.minsoo.slimtrack.data.db.AppDatabase
 import com.minsoo.slimtrack.data.db.DrinkEntity
 import com.minsoo.slimtrack.data.db.ExerciseEntity
@@ -249,14 +257,77 @@ class SlimTrackScreenshotTest {
                     profile = profile,
                     settings = settings,
                     currentApiKey = "AIzaSy***************",
+                    availableGemini3Models = com.minsoo.slimtrack.data.prefs.Gemini3Catalog.presetModels,
+                    isFetchingModels = false,
+                    modelFetchMessage = "✅ 사용 가능한 Gemini 3.x 모델 5개 확인됨",
                     healthConnectStatus = HealthConnectStatus.AVAILABLE,
                     onSaveProfile = {},
                     onSaveSettings = {},
                     onSaveApiKey = {},
+                    onFetchAvailableGemini3Models = {},
                     onRequestHealthPermissions = {}
                 )
             }
         }
         composeRule.onRoot().captureRoboImage(File(outDir, "05_profile_settings.png"), roborazziOptions)
+    }
+
+    @Test
+    fun capture06HomeDetailAndBottomNav() {
+        val dash = buildSampleDashboard()
+        // Set day 2..7 as missing meals (0 meals) to verify Canvas graphic X icon in calendar cells
+        val modifiedEvals = dash.monthEvaluations.toMutableMap()
+        for (d in 2..6) {
+            val date = ym.atDay(d)
+            modifiedEvals[date] = CalorieEngine.evaluateDay(DayRecordInput(date, 0, 0, 0, 0), dailyPlan, today, 150, true)
+        }
+        val dashWithMissing = dash.copy(monthEvaluations = modifiedEvals)
+        composeRule.setContent {
+            SlimTrackTheme {
+                Scaffold(
+                    bottomBar = {
+                        NavigationBar {
+                            MainTab.entries.forEach { tab ->
+                                NavigationBarItem(
+                                    selected = tab == MainTab.HOME,
+                                    onClick = {},
+                                    icon = { Icon(tab.icon, contentDescription = tab.labelKo) },
+                                    label = {
+                                        Text(
+                                            text = tab.labelKo,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
+                ) { pad ->
+                    HomeScreen(
+                        dashboard = dashWithMissing,
+                        currentYearMonth = ym,
+                        selectedDate = today,
+                        selectedDateMeals = listOf(
+                            MealEntity(1, "2026-11-09", "LUNCH", "", "[]", 1055, 55f, 65f, 22f, 0.9f, "다양한 단백질원 정식")
+                        ),
+                        selectedDateDrinks = emptyList(),
+                        selectedDateExercises = emptyList(),
+                        syncMessage = null,
+                        onPrevMonth = {},
+                        onNextMonth = {},
+                        onSelectDate = {},
+                        onQuickAddWeight = { _, _ -> },
+                        onSyncHealthConnect = {},
+                        onNavigateToMealTab = {},
+                        onNavigateToCoachTab = {},
+                        onDeleteMeal = {},
+                        onDeleteDrink = {},
+                        modifier = Modifier.padding(pad)
+                    )
+                }
+            }
+        }
+        composeRule.onRoot().captureRoboImage(File(outDir, "06_home_with_bottom_nav.png"), roborazziOptions)
     }
 }

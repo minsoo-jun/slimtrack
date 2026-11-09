@@ -2,8 +2,10 @@ package com.minsoo.slimtrack.ui.body
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -23,11 +25,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -42,6 +42,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.minsoo.slimtrack.data.ai.InBodyOcrResponse
@@ -95,13 +96,16 @@ fun BodyAndStageScreen(
         modifier = modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
             text = "⚖ 매일 체중 · InBody(주 1회) · 3단계 목표",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis
         )
 
         if (!syncStatusMessage.isNullOrBlank()) {
@@ -112,8 +116,10 @@ fun BodyAndStageScreen(
             ) {
                 Text(
                     text = syncStatusMessage,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(10.dp)
+                    fontSize = 11.5.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
                 )
             }
         }
@@ -124,7 +130,7 @@ fun BodyAndStageScreen(
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -132,39 +138,62 @@ fun BodyAndStageScreen(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "1️⃣ 매일 체중 입력 & Google Health 동기화",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+                            text = "1️⃣ 매일 체중 입력 & Health 동기화",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "현재 반영 체중: ${String.format("%.1fkg", bodyStatus.currentWeightKg)} (${bodyStatus.currentWeightSource}, ${bodyStatus.currentWeightDateIso})",
-                            fontSize = 12.sp,
-                            color = Color(0xFF475569)
+                            text = "현재: ${String.format("%.1fkg", bodyStatus.currentWeightKg)} (${bodyStatus.currentWeightSource})",
+                            fontSize = 11.sp,
+                            color = Color(0xFF475569),
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                    FilledTonalButton(onClick = onManualSyncHealthConnectWeight) {
-                        Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Health Connect 동기화", fontSize = 12.sp)
+                    Spacer(Modifier.width(6.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier.clickable(onClick = onManualSyncHealthConnectWeight)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = "HC 동기화",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
                     }
                 }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     OutlinedTextField(
                         value = dailyWeightInput,
                         onValueChange = { dailyWeightInput = it },
-                        label = { Text("오늘 체중 (kg)") },
+                        label = { Text("체중(kg)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
                         modifier = Modifier.weight(1f),
                         singleLine = true
                     )
                     OutlinedTextField(
                         value = dailyFatPctInput,
                         onValueChange = { dailyFatPctInput = it },
-                        label = { Text("체지방률 (%, 선택)") },
+                        label = { Text("체지방(%)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
                         modifier = Modifier.weight(1f),
                         singleLine = true
                     )
@@ -175,13 +204,13 @@ fun BodyAndStageScreen(
                             if (w != null && w in 35f..250f) {
                                 onAddManualWeight(today, w, fat)
                             }
-                        }
+                        },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp)
                     ) {
-                        Text("체중 저장")
+                        Text("체중 저장", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     }
                 }
 
-                // Weight Trend Line Chart
                 WeightTrendChart(
                     weightLogs = weightLogs,
                     latestInBody = latestInBody,
@@ -196,94 +225,99 @@ fun BodyAndStageScreen(
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "2️⃣ InBody 정보 (주 1회 갱신 · 항상 최신값 사용)",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    text = "2️⃣ InBody 정보 (주 1회 · 항상 최신값 사용)",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false
                 )
                 Text(
-                    text = "최신 측정일시: ${latestInBody.measuredAtIso} (${latestInBody.device}, ${latestInBody.source}) · 기초대사량(BMR)은 항상 InBody 공식 370 + 21.6 × (체중 − 체지방량)으로 자동 계산됩니다.",
-                    fontSize = 12.sp,
-                    color = Color(0xFF475569)
+                    text = "최신: ${latestInBody.measuredAtIso} (${latestInBody.device}) · BMR = 370 + 21.6 × 제지방량",
+                    fontSize = 11.sp,
+                    color = Color(0xFF475569),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Button(
+                    onClick = onPickInBodyScreenshot,
+                    enabled = !isAnalyzingInBody,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Button(
-                        onClick = onPickInBodyScreenshot,
-                        enabled = !isAnalyzingInBody,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("InBody 앱 스크린샷에서 자동 추출 (Gemini OCR)")
-                    }
+                    Icon(Icons.Default.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = "InBody 스크린샷 OCR 자동 추출 (Gemini 3.x)",
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false
+                    )
                 }
 
                 if (isAnalyzingInBody) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Text("InBody 스크린샷 수치 추출 중...", fontSize = 12.sp)
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text("InBody 스크린샷 수치 추출 중...", fontSize = 12.sp, maxLines = 1, softWrap = false)
                     }
                 }
 
                 HorizontalDivider()
-                Text("InBody 측정값 확인 / 수동 수정", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
 
                 OutlinedTextField(
                     value = ibMeasuredAt,
                     onValueChange = { ibMeasuredAt = it },
-                    label = { Text("측정일시 (예: 26.11.07(토) 11:44 또는 2026-11-07T11:44)") },
+                    label = { Text("측정일시 (2026-11-07T11:44)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     OutlinedTextField(
                         value = ibWeight,
                         onValueChange = { ibWeight = it },
-                        label = { Text("체중 (kg)") },
+                        label = { Text("체중(kg)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
                         modifier = Modifier.weight(1f),
                         singleLine = true
                     )
                     OutlinedTextField(
                         value = ibMuscle,
                         onValueChange = { ibMuscle = it },
-                        label = { Text("골격근량 (kg)") },
+                        label = { Text("골격근(kg)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
                         modifier = Modifier.weight(1f),
                         singleLine = true
                     )
                     OutlinedTextField(
                         value = ibFatMass,
                         onValueChange = { ibFatMass = it },
-                        label = { Text("체지방량 (kg)") },
+                        label = { Text("체지방(kg)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
                         modifier = Modifier.weight(1f),
                         singleLine = true
                     )
                 }
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     OutlinedTextField(
                         value = ibFatPct,
                         onValueChange = { ibFatPct = it },
-                        label = { Text("체지방률 (%)") },
+                        label = { Text("체지방률(%)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
                         modifier = Modifier.weight(1f),
                         singleLine = true
                     )
                     OutlinedTextField(
                         value = ibVisceral,
                         onValueChange = { ibVisceral = it },
-                        label = { Text("내장지방 (Level)") },
+                        label = { Text("내장지방(Lv)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
                         modifier = Modifier.weight(1f),
                         singleLine = true
                     )
                     OutlinedTextField(
                         value = ibEcw,
                         onValueChange = { ibEcw = it },
-                        label = { Text("세포외수분비") },
+                        label = { Text("세포외수분", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
                         modifier = Modifier.weight(1f),
                         singleLine = true
                     )
@@ -292,26 +326,32 @@ fun BodyAndStageScreen(
                 Surface(
                     color = StatusGreenBg,
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, StatusGreenBorder, RoundedCornerShape(8.dp))
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "InBody 공식 자동 계산 기초대사량 (BMR)",
-                                fontSize = 11.sp,
-                                color = StatusGreenText
+                                text = "InBody 공식 자동 계산 BMR",
+                                fontSize = 10.5.sp,
+                                color = StatusGreenText,
+                                maxLines = 1,
+                                softWrap = false
                             )
                             Text(
                                 text = "${liveCalculatedBmr} kcal / 일",
-                                fontSize = 18.sp,
+                                fontSize = 16.sp,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = StatusGreenText
+                                color = StatusGreenText,
+                                maxLines = 1,
+                                softWrap = false
                             )
                         }
                         Button(
@@ -337,9 +377,10 @@ fun BodyAndStageScreen(
                                         bmrReported = null
                                     )
                                 )
-                            }
+                            },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
-                            Text("최신 InBody 저장")
+                            Text("InBody 저장", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                         }
                     }
                 }
@@ -352,11 +393,13 @@ fun BodyAndStageScreen(
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "🎯 3단계 체중감량 및 내장지방 목표 로드맵",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    softWrap = false
                 )
                 GoalStage.entries.forEach { stage ->
                     val isCurrent = bodyStatus.stageResult.activeStage == stage
@@ -391,14 +434,16 @@ private fun WeightTrendChart(
 
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
-            text = "최근 체중 추이 (실선: 측정 체중 / 점선: 현재 단계 목표 ${targetWeightKg}kg)",
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold
+            text = "체중 추이 (실선: 측정 체중 / 점선: 단계 목표 ${targetWeightKg}kg)",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            softWrap = false
         )
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(110.dp)
+                .height(90.dp)
                 .padding(vertical = 4.dp)
         ) {
             val minW = (minOf(points.minOf { it.second }, targetWeightKg) - 1.5f)
@@ -410,7 +455,6 @@ private fun WeightTrendChart(
                 return size.height * (1f - ratio)
             }
 
-            // Target dashed line
             val targetY = yFor(targetWeightKg)
             drawLine(
                 color = StatusGreenBorder,
@@ -473,28 +517,33 @@ private fun StageRoadmapItem(
             .fillMaxWidth()
             .border(if (isCurrent || isDone) 1.5.dp else 0.dp, border, RoundedCornerShape(10.dp))
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "${stage.titleKo} ${if (isCurrent) "[현재 단계]" else ""}",
+                    text = "${stage.titleKo} ${if (isCurrent) "[진행중]" else ""}",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
                 if (isDone) {
-                    Icon(Icons.Default.CheckCircle, contentDescription = "달성", tint = StatusGreenBorder)
+                    Icon(Icons.Default.CheckCircle, contentDescription = "달성", tint = StatusGreenBorder, modifier = Modifier.size(16.dp))
                 }
             }
             Text(
-                text = "• 목표 체중: ${stage.targetWeightMinKg.toInt()} ~ ${stage.targetWeightMaxKg.toInt()} kg | 목표 내장지방: ${stage.targetVisceralFatMin}~${stage.targetVisceralFatMax} Level",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold
+                text = "목표 체중: ${stage.targetWeightMinKg.toInt()}~${stage.targetWeightMaxKg.toInt()}kg · 내장지방: ${stage.targetVisceralFatMin}~${stage.targetVisceralFatMax}Lv",
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                softWrap = false
             )
             stage.strategyPointsKo.forEach { pt ->
-                Text(text = "  - $pt", fontSize = 11.sp, color = Color(0xFF334155))
+                Text(text = "• $pt", fontSize = 11.sp, color = Color(0xFF334155))
             }
         }
     }

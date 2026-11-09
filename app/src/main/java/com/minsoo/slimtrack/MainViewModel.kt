@@ -17,6 +17,8 @@ import com.minsoo.slimtrack.data.db.MealEntity
 import com.minsoo.slimtrack.data.db.MealType
 import com.minsoo.slimtrack.data.db.WeightLogEntity
 import com.minsoo.slimtrack.data.prefs.AppSettings
+import com.minsoo.slimtrack.data.prefs.Gemini3Catalog
+import com.minsoo.slimtrack.data.prefs.GeminiModelOption
 import com.minsoo.slimtrack.data.prefs.UserProfile
 import com.minsoo.slimtrack.data.repo.DashboardState
 import com.minsoo.slimtrack.data.repo.SlimTrackRepository
@@ -71,6 +73,15 @@ class MainViewModel(
 
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
+
+    private val _availableGemini3Models = MutableStateFlow(Gemini3Catalog.presetModels)
+    val availableGemini3Models: StateFlow<List<GeminiModelOption>> = _availableGemini3Models.asStateFlow()
+
+    private val _isFetchingModels = MutableStateFlow(false)
+    val isFetchingModels: StateFlow<Boolean> = _isFetchingModels.asStateFlow()
+
+    private val _modelFetchMessage = MutableStateFlow<String?>(null)
+    val modelFetchMessage: StateFlow<String?> = _modelFetchMessage.asStateFlow()
 
     val dashboardState: StateFlow<DashboardState?> = _currentYearMonth
         .flatMapLatest { ym -> repository.observeDashboard(ym, LocalDate.now()) }
@@ -169,7 +180,7 @@ class MainViewModel(
                 return@launch
             }
             val apiKey = repository.secretStore.getGeminiApiKey()
-            val model = dashboardState.value?.settings?.geminiModel ?: "gemini-2.5-flash"
+            val model = Gemini3Catalog.ensureGemini3Model(dashboardState.value?.settings?.geminiModel)
             val result = repository.geminiClient.analyzeMealPhoto(
                 apiKey = apiKey,
                 model = model,
@@ -181,7 +192,7 @@ class MainViewModel(
                 _stagedItems.value = resp.toFoodItemEntries()
                 _stagedNotes.value = resp.notes
                 _stagedConfidence.value = resp.confidence
-                _statusMessage.value = "🤖 Gemini 분석 완료: ${resp.items.size}개 품목, 총 ${resp.totalKcal}kcal (확인 후 저장하세요)"
+                _statusMessage.value = "🤖 Gemini 3.x 분석 완료: ${resp.items.size}개 품목, 총 ${resp.totalKcal}kcal"
             }.onFailure { err ->
                 _statusMessage.value = "⚠️ 사진 분석 실패: ${err.message}"
             }
@@ -200,7 +211,7 @@ class MainViewModel(
                 return@launch
             }
             val apiKey = repository.secretStore.getGeminiApiKey()
-            val model = dashboardState.value?.settings?.geminiModel ?: "gemini-2.5-flash"
+            val model = Gemini3Catalog.ensureGemini3Model(dashboardState.value?.settings?.geminiModel)
             val res = repository.geminiClient.analyzeInBodyScreenshot(
                 apiKey = apiKey,
                 model = model,
@@ -211,9 +222,27 @@ class MainViewModel(
             res.onSuccess { ocr ->
                 val profile = dashboardState.value?.profile ?: UserProfile()
                 val saved = repository.saveInBodyFromOcr(ocr, profile, source = "OCR")
-                _statusMessage.value = "✅ InBody OCR 추출 및 저장 완료: ${saved.weightKg}kg, 내장지방 ${saved.visceralFatLevel}Lv, 공식 BMR ${saved.bmrCalculated}kcal"
+                _statusMessage.value = "✅ InBody OCR 완료: ${saved.weightKg}kg, 내장지방 ${saved.visceralFatLevel}Lv, BMR ${saved.bmrCalculated}kcal"
             }.onFailure { err ->
                 _statusMessage.value = "⚠️ InBody OCR 실패: ${err.message}"
+            }
+        }
+    }
+
+    fun fetchAvailableGemini3Models(apiKeyInput: String) {
+        viewModelScope.launch {
+            val keyToUse = apiKeyInput.trim().ifBlank { repository.secretStore.getGeminiApiKey() }
+            if (keyToUse.isNotBlank()) {
+                repository.secretStore.setGeminiApiKey(keyToUse)
+            }
+            _isFetchingModels.value = true
+            val res = repository.geminiClient.fetchAvailableGemini3Models(keyToUse)
+            _isFetchingModels.value = false
+            res.onSuccess { list ->
+                _availableGemini3Models.value = list
+                _modelFetchMessage.value = "✅ 사용 가능한 Gemini 3.x 모델 ${list.size}개 확인됨"
+            }.onFailure { err ->
+                _modelFetchMessage.value = "⚠️ 조회 실패 (기본 3.x 목록 표시): ${err.message}"
             }
         }
     }
@@ -238,7 +267,7 @@ class MainViewModel(
                 kcal = kcal
             )
             repository.dao.insertDrink(entity)
-            _statusMessage.value = "🍺 ${preset.labelKo} ${volumeMl}ml (${kcal}kcal) 기록 추가됨"
+            _statusMessage.value = "🍺 ${preset.labelKo} ${volumeMl}ml (${kcal}kcal) 추가됨"
         }
     }
 

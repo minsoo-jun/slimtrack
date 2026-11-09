@@ -12,8 +12,63 @@ import kotlinx.coroutines.flow.map
 
 private val Context.settingsDataStore by preferencesDataStore(name = "app_settings")
 
+data class GeminiModelOption(
+    val id: String,
+    val titleKo: String,
+    val badgeKo: String,
+    val descKo: String
+)
+
+object Gemini3Catalog {
+    const val DEFAULT_MODEL_ID = "gemini-3-flash-preview"
+
+    val presetModels: List<GeminiModelOption> = listOf(
+        GeminiModelOption(
+            id = "gemini-3-flash-preview",
+            titleKo = "Gemini 3 Flash (기본 추천)",
+            badgeKo = "3.0 Flash",
+            descKo = "빠른 식사 사진/InBody OCR 분석 및 코칭"
+        ),
+        GeminiModelOption(
+            id = "gemini-3.1-pro-preview",
+            titleKo = "Gemini 3.1 Pro",
+            badgeKo = "3.1 Pro",
+            descKo = "고정밀 음식 영양소 추론 및 심층 코칭"
+        ),
+        GeminiModelOption(
+            id = "gemini-3-pro-preview",
+            titleKo = "Gemini 3.0 Pro",
+            badgeKo = "3.0 Pro",
+            descKo = "멀티모달 정밀 이미지 분석"
+        ),
+        GeminiModelOption(
+            id = "gemini-3.1-flash-lite-preview",
+            titleKo = "Gemini 3.1 Flash Lite",
+            badgeKo = "3.1 Lite",
+            descKo = "초고속·저지연 응답"
+        ),
+        GeminiModelOption(
+            id = "gemini-3.8-flash",
+            titleKo = "Gemini 3.8 Flash",
+            badgeKo = "3.8 Flash",
+            descKo = "최신 3.x 세대 고속 모델"
+        )
+    )
+
+    /**
+     * Migrates any legacy 1.x / 2.x model name (e.g. gemini-2.5-flash) to Gemini 3.x default.
+     */
+    fun ensureGemini3Model(rawModel: String?): String {
+        val clean = rawModel?.trim()?.removePrefix("models/").orEmpty()
+        if (clean.isBlank() || clean.startsWith("gemini-2") || clean.startsWith("gemini-1")) {
+            return DEFAULT_MODEL_ID
+        }
+        return clean
+    }
+}
+
 data class AppSettings(
-    val geminiModel: String = "gemini-2.5-flash",
+    val geminiModel: String = Gemini3Catalog.DEFAULT_MODEL_ID,
     val toleranceKcal: Int = 150,
     val strictness: AdviceStrictness = AdviceStrictness.STRICT,
     val sundayMorningAlarmEnabled: Boolean = true,
@@ -35,8 +90,9 @@ class SettingsStore(private val context: Context) {
         val strictness = prefs[Keys.STRICTNESS]?.let {
             runCatching { AdviceStrictness.valueOf(it) }.getOrNull()
         } ?: AdviceStrictness.STRICT
+        val resolvedModel = Gemini3Catalog.ensureGemini3Model(prefs[Keys.GEMINI_MODEL])
         AppSettings(
-            geminiModel = prefs[Keys.GEMINI_MODEL] ?: "gemini-2.5-flash",
+            geminiModel = resolvedModel,
             toleranceKcal = prefs[Keys.TOLERANCE_KCAL] ?: 150,
             strictness = strictness,
             sundayMorningAlarmEnabled = prefs[Keys.SUNDAY_ALARM] ?: true,
@@ -47,7 +103,7 @@ class SettingsStore(private val context: Context) {
 
     suspend fun updateSettings(settings: AppSettings) {
         context.settingsDataStore.edit { prefs ->
-            prefs[Keys.GEMINI_MODEL] = settings.geminiModel
+            prefs[Keys.GEMINI_MODEL] = Gemini3Catalog.ensureGemini3Model(settings.geminiModel)
             prefs[Keys.TOLERANCE_KCAL] = settings.toleranceKcal
             prefs[Keys.STRICTNESS] = settings.strictness.name
             prefs[Keys.SUNDAY_ALARM] = settings.sundayMorningAlarmEnabled

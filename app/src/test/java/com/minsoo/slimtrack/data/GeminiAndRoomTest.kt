@@ -111,7 +111,7 @@ class GeminiAndRoomTest {
 
         val ok = repository.geminiClient.analyzeMealPhoto(
             apiKey = "test-key",
-            model = "gemini-2.5-flash",
+            model = "gemini-3-flash-preview",
             jpegBytes = ByteArray(32),
             mealTypeLabelKo = "점심"
         )
@@ -119,10 +119,24 @@ class GeminiAndRoomTest {
         assertThat(ok.getOrThrow().totalKcal).isEqualTo(450)
         assertThat(ok.getOrThrow().items.first().name).isEqualTo("김치찌개")
 
+        // Verify GET /v1beta/models filters only Gemini 3.x models supporting generateContent
+        val modelsListJson = """
+            {
+              "models": [
+                {"name": "models/gemini-2.5-flash", "displayName": "Gemini 2.5 Flash", "supportedGenerationMethods": ["generateContent"]},
+                {"name": "models/gemini-3-flash-preview", "displayName": "Gemini 3 Flash Preview", "supportedGenerationMethods": ["generateContent"]},
+                {"name": "models/gemini-3.1-pro-preview", "displayName": "Gemini 3.1 Pro Preview", "supportedGenerationMethods": ["generateContent"]}
+              ]
+            }
+        """.trimIndent()
+        mockServer.enqueue(MockResponse().setResponseCode(200).setBody(modelsListJson))
+        val discovered = repository.geminiClient.fetchAvailableGemini3Models("test-key").getOrThrow()
+        assertThat(discovered.map { it.id }).containsExactly("gemini-3-flash-preview", "gemini-3.1-pro-preview").inOrder()
+
         mockServer.enqueue(MockResponse().setResponseCode(429).setBody("Quota exceeded"))
         val err = repository.geminiClient.analyzeMealPhoto(
             apiKey = "test-key",
-            model = "gemini-2.5-flash",
+            model = "gemini-3-flash-preview",
             jpegBytes = ByteArray(32),
             mealTypeLabelKo = "점심"
         )

@@ -36,6 +36,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.health.connect.client.PermissionController
@@ -47,12 +49,15 @@ import com.minsoo.slimtrack.ui.settings.SettingsAndProfileScreen
 import com.minsoo.slimtrack.ui.theme.SlimTrackTheme
 import java.io.File
 
+/**
+ * Concise 2-character Korean labels so bottom NavigationBar NEVER wraps into 2 lines!
+ */
 enum class MainTab(val labelKo: String, val icon: ImageVector) {
-    HOME("홈/캘린더", Icons.Default.CalendarMonth),
-    MEAL("식사/술/운동", Icons.Default.Restaurant),
-    BODY("체중/InBody", Icons.Default.MonitorWeight),
-    COACH("엄격코치", Icons.AutoMirrored.Filled.Assignment),
-    SETTINGS("설정/프로필", Icons.Default.Settings)
+    HOME("홈", Icons.Default.CalendarMonth),
+    MEAL("식단", Icons.Default.Restaurant),
+    BODY("신체", Icons.Default.MonitorWeight),
+    COACH("코치", Icons.AutoMirrored.Filled.Assignment),
+    SETTINGS("설정", Icons.Default.Settings)
 }
 
 class MainActivity : ComponentActivity() {
@@ -96,6 +101,9 @@ fun SlimTrackRoot(
     val isAnalyzingInBody by viewModel.isAnalyzingInBody.collectAsState()
     val isGeneratingAiAdvice by viewModel.isGeneratingAiAdvice.collectAsState()
     val statusMessage by viewModel.statusMessage.collectAsState()
+    val availableGemini3Models by viewModel.availableGemini3Models.collectAsState()
+    val isFetchingModels by viewModel.isFetchingModels.collectAsState()
+    val modelFetchMessage by viewModel.modelFetchMessage.collectAsState()
 
     val selectedDateMeals by viewModel.selectedDateMeals.collectAsState()
     val selectedDateDrinks by viewModel.selectedDateDrinks.collectAsState()
@@ -176,7 +184,15 @@ fun SlimTrackRoot(
                         selected = activeTab == tab,
                         onClick = { activeTab = tab },
                         icon = { Icon(tab.icon, contentDescription = tab.labelKo) },
-                        label = { Text(tab.labelKo) }
+                        label = {
+                            Text(
+                                text = tab.labelKo,
+                                fontSize = 11.sp,
+                                fontWeight = if (activeTab == tab) FontWeight.Bold else FontWeight.Medium,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
                     )
                 }
             }
@@ -275,10 +291,14 @@ fun SlimTrackRoot(
                     profile = dash.profile,
                     settings = dash.settings,
                     currentApiKey = apiKey,
+                    availableGemini3Models = availableGemini3Models,
+                    isFetchingModels = isFetchingModels,
+                    modelFetchMessage = modelFetchMessage,
                     healthConnectStatus = app.healthConnectRepository.checkAvailability(),
                     onSaveProfile = viewModel::saveUserProfile,
                     onSaveSettings = viewModel::saveAppSettings,
                     onSaveApiKey = viewModel::saveGeminiApiKey,
+                    onFetchAvailableGemini3Models = viewModel::fetchAvailableGemini3Models,
                     onRequestHealthPermissions = {
                         runCatching {
                             healthConnectPermissionLauncher.launch(
