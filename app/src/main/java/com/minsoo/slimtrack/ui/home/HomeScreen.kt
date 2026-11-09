@@ -207,7 +207,7 @@ private fun StageHeaderCard(
     onSyncClick: () -> Unit
 ) {
     val body = dashboard.bodyStatus
-    val stage = body.stageResult.activeStage
+    val stage = body.stageResult.activeStageSpec
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -867,12 +867,15 @@ private fun SelectedDateDetailCard(
 
                 if (exercises.isNotEmpty()) {
                     HorizontalDivider()
+                    val stepEx = exercises.firstOrNull { it.source == "HC_STEPS" }
+                    val stepSuffix = if (stepEx != null) " · 걸음 ${stepEx.steps}보(4천보 초과 +${stepEx.activeKcal}kcal)" else ""
                     Text(
-                        text = "🏃 운동 소모 (${exercises.sumOf { it.activeKcal }}kcal)",
+                        text = "🏃 운동 & 도보 소모 (${exercises.sumOf { it.activeKcal }}kcal$stepSuffix)",
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
                         maxLines = 1,
-                        softWrap = false
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
                     )
                     exercises.forEach { ex ->
                         Surface(

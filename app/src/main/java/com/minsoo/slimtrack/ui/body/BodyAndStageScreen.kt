@@ -172,6 +172,7 @@ fun BodyAndStageScreen(
                 }
 
                 // Summary tiles for Health Connect Weight & Body Fat
+                val activeSpec = bodyStatus.stageResult.activeStageSpec
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -179,7 +180,7 @@ fun BodyAndStageScreen(
                     HealthSummaryBox(
                         label = "현재 체중 (${bodyStatus.currentWeightSource})",
                         value = String.format("%.1f kg", bodyStatus.currentWeightKg),
-                        subText = "1단계 목표: ${bodyStatus.stageResult.activeStage.targetWeightMinKg.toInt()}~${bodyStatus.stageResult.activeStage.targetWeightMaxKg.toInt()}kg",
+                        subText = "${activeSpec.number}단계 목표: ${activeSpec.targetWeightMinKg.toInt()}~${activeSpec.targetWeightMaxKg.toInt()}kg",
                         color = TealPrimary,
                         modifier = Modifier.weight(1f)
                     )
@@ -196,7 +197,7 @@ fun BodyAndStageScreen(
                 WeightTrendChart(
                     weightLogs = filteredWeightLogs,
                     latestInBody = latestInBody,
-                    targetWeightKg = bodyStatus.stageResult.activeStage.targetWeightMidKg.toFloat()
+                    targetWeightKg = activeSpec.targetWeightMidKg.toFloat()
                 )
 
                 HorizontalDivider()
@@ -304,7 +305,7 @@ fun BodyAndStageScreen(
             }
         }
 
-        // Section 3: 3-Stage Goal Roadmap
+        // Section 3: 3-Stage Goal Roadmap (Uses customized stage specs from UserProfile!)
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -318,14 +319,14 @@ fun BodyAndStageScreen(
                     maxLines = 1,
                     softWrap = false
                 )
-                GoalStage.entries.forEach { stage ->
-                    val isCurrent = bodyStatus.stageResult.activeStage == stage
-                    val isDone = when (stage) {
+                bodyStatus.stageResult.allStageSpecs.forEach { spec ->
+                    val isCurrent = bodyStatus.stageResult.activeStage == spec.stage
+                    val isDone = when (spec.stage) {
                         GoalStage.STAGE_1_SHORT -> bodyStatus.stageResult.stage1Completed
                         GoalStage.STAGE_2_MID -> bodyStatus.stageResult.stage2Completed
                         GoalStage.STAGE_3_LONG -> bodyStatus.stageResult.stage3Completed
                     }
-                    StageRoadmapItem(stage = stage, isCurrent = isCurrent, isDone = isDone)
+                    StageRoadmapItem(spec = spec, isCurrent = isCurrent, isDone = isDone)
                 }
             }
         }
@@ -543,7 +544,7 @@ private fun BodyFatTrendChart(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "📉 체지방률(%) 추이 (실선: Health 체지방 / 점선: 표준 20%)",
+                text = "📉 체지방률(%) 추이 (목표 20%)",
                 fontSize = 11.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
@@ -631,7 +632,7 @@ private fun BodyFatTrendChart(
 
 @Composable
 private fun StageRoadmapItem(
-    stage: GoalStage,
+    spec: com.minsoo.slimtrack.domain.StageSpec,
     isCurrent: Boolean,
     isDone: Boolean
 ) {
@@ -660,7 +661,7 @@ private fun StageRoadmapItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "${stage.titleKo} ${if (isCurrent) "[진행중]" else ""}",
+                    text = "${spec.titleKo} ${if (isCurrent) "[진행중]" else ""}",
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
                     maxLines = 1,
@@ -672,13 +673,13 @@ private fun StageRoadmapItem(
                 }
             }
             Text(
-                text = "목표 체중: ${stage.targetWeightMinKg.toInt()}~${stage.targetWeightMaxKg.toInt()}kg · 내장지방: ${stage.targetVisceralFatMin}~${stage.targetVisceralFatMax}Lv",
+                text = "목표 체중: ${spec.targetWeightMinKg.toInt()}~${spec.targetWeightMaxKg.toInt()}kg · 목표 내장지방: ${spec.targetVisceralFatMax}Lv 이하",
                 fontSize = 11.5.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 softWrap = false
             )
-            stage.strategyPointsKo.forEach { pt ->
+            spec.strategyPointsKo.forEach { pt ->
                 Text(text = "• $pt", fontSize = 11.sp, color = Color(0xFF334155))
             }
         }

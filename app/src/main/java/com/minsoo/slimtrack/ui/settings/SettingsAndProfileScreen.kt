@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -88,6 +89,24 @@ fun SettingsAndProfileScreen(
     var activityFactorText by rememberSaveable(profile.activityFactor) { mutableStateOf(profile.activityFactor.toString()) }
     var muscleBaselineText by rememberSaveable(profile.muscleBaselineKg) { mutableStateOf(profile.muscleBaselineKg.toString()) }
 
+    // 3-Stage Diet Goal Customization States (Defaulting to the current 3-stage plan!)
+    var startWeightText by rememberSaveable(profile.startWeightKg) { mutableStateOf(profile.startWeightKg.toString()) }
+
+    var s1MinText by rememberSaveable(profile.stage1WeightMinKg) { mutableStateOf(profile.stage1WeightMinKg.toString()) }
+    var s1MaxText by rememberSaveable(profile.stage1WeightMaxKg) { mutableStateOf(profile.stage1WeightMaxKg.toString()) }
+    var s1VfText by rememberSaveable(profile.stage1VisceralFatMax) { mutableStateOf(profile.stage1VisceralFatMax.toString()) }
+    var s1MonthsText by rememberSaveable(profile.stage1Months) { mutableStateOf(profile.stage1Months.toString()) }
+
+    var s2MinText by rememberSaveable(profile.stage2WeightMinKg) { mutableStateOf(profile.stage2WeightMinKg.toString()) }
+    var s2MaxText by rememberSaveable(profile.stage2WeightMaxKg) { mutableStateOf(profile.stage2WeightMaxKg.toString()) }
+    var s2VfText by rememberSaveable(profile.stage2VisceralFatMax) { mutableStateOf(profile.stage2VisceralFatMax.toString()) }
+    var s2MonthsText by rememberSaveable(profile.stage2Months) { mutableStateOf(profile.stage2Months.toString()) }
+
+    var s3MinText by rememberSaveable(profile.stage3WeightMinKg) { mutableStateOf(profile.stage3WeightMinKg.toString()) }
+    var s3MaxText by rememberSaveable(profile.stage3WeightMaxKg) { mutableStateOf(profile.stage3WeightMaxKg.toString()) }
+    var s3VfText by rememberSaveable(profile.stage3VisceralFatMax) { mutableStateOf(profile.stage3VisceralFatMax.toString()) }
+    var s3MonthsText by rememberSaveable(profile.stage3Months) { mutableStateOf(profile.stage3Months.toString()) }
+
     var apiKeyText by rememberSaveable(currentApiKey) { mutableStateOf(currentApiKey) }
     var selectedModelId by rememberSaveable(settings.geminiModel) {
         mutableStateOf(Gemini3Catalog.ensureGemini3Model(settings.geminiModel))
@@ -108,13 +127,43 @@ fun SettingsAndProfileScreen(
         val s = runCatching { LocalDate.parse(startDateText.trim()) }.getOrDefault(profile.goalStartDate)
         val act = activityFactorText.toDoubleOrNull()?.takeIf { it in 1.0..2.5 } ?: profile.activityFactor
         val smm = muscleBaselineText.toDoubleOrNull()?.takeIf { it in 10.0..80.0 } ?: profile.muscleBaselineKg
+        val startW = startWeightText.toDoubleOrNull()?.takeIf { it in 35.0..250.0 } ?: profile.startWeightKg
+
+        val s1Min = s1MinText.toDoubleOrNull()?.takeIf { it in 35.0..250.0 } ?: profile.stage1WeightMinKg
+        val s1Max = s1MaxText.toDoubleOrNull()?.takeIf { it in s1Min..250.0 } ?: maxOf(s1Min, profile.stage1WeightMaxKg)
+        val s1Vf = s1VfText.toIntOrNull()?.coerceIn(1, 30) ?: profile.stage1VisceralFatMax
+        val s1M = s1MonthsText.toIntOrNull()?.coerceIn(1, 36) ?: profile.stage1Months
+
+        val s2Min = s2MinText.toDoubleOrNull()?.takeIf { it in 35.0..250.0 } ?: profile.stage2WeightMinKg
+        val s2Max = s2MaxText.toDoubleOrNull()?.takeIf { it in s2Min..250.0 } ?: maxOf(s2Min, profile.stage2WeightMaxKg)
+        val s2Vf = s2VfText.toIntOrNull()?.coerceIn(1, 30) ?: profile.stage2VisceralFatMax
+        val s2M = s2MonthsText.toIntOrNull()?.coerceIn(1, 36) ?: profile.stage2Months
+
+        val s3Min = s3MinText.toDoubleOrNull()?.takeIf { it in 35.0..250.0 } ?: profile.stage3WeightMinKg
+        val s3Max = s3MaxText.toDoubleOrNull()?.takeIf { it in s3Min..250.0 } ?: maxOf(s3Min, profile.stage3WeightMaxKg)
+        val s3Vf = s3VfText.toIntOrNull()?.coerceIn(1, 30) ?: profile.stage3VisceralFatMax
+        val s3M = s3MonthsText.toIntOrNull()?.coerceIn(1, 48) ?: profile.stage3Months
+
         return profile.copy(
             sex = selectedSex,
             heightCm = h,
             birthDate = b,
             activityFactor = act,
             muscleBaselineKg = smm,
-            goalStartDate = s
+            goalStartDate = s,
+            startWeightKg = startW,
+            stage1WeightMinKg = s1Min,
+            stage1WeightMaxKg = s1Max,
+            stage1VisceralFatMax = s1Vf,
+            stage1Months = s1M,
+            stage2WeightMinKg = s2Min,
+            stage2WeightMaxKg = s2Max,
+            stage2VisceralFatMax = s2Vf,
+            stage2Months = s2M,
+            stage3WeightMinKg = s3Min,
+            stage3WeightMaxKg = s3Max,
+            stage3VisceralFatMax = s3Vf,
+            stage3Months = s3M
         )
     }
 
@@ -129,7 +178,6 @@ fun SettingsAndProfileScreen(
         )
     }
 
-    // Auto-save helper so user edits are immediately persisted even without pressing the bottom button
     fun autoPersistAll() {
         onSaveProfile(buildCurrentProfile())
         onSaveSettings(buildCurrentSettings())
@@ -148,7 +196,7 @@ fun SettingsAndProfileScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = "⚙ 사용자 프로필 · 유효 시작일 · Gemini 3.x 설정",
+            text = "⚙ 프로필 · 시작일 · 3단계 목표 · Gemini 3.x 설정",
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
             maxLines = 1,
@@ -177,7 +225,7 @@ fun SettingsAndProfileScreen(
             }
         }
 
-        // Section 1: User Profile & Effective Start Date (Auto-persisted locally!)
+        // Section 1: User Profile & Effective Start Date
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -192,7 +240,6 @@ fun SettingsAndProfileScreen(
                     softWrap = false
                 )
 
-                // Effective Start Date Row (Point 7)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -346,7 +393,114 @@ fun SettingsAndProfileScreen(
             }
         }
 
-        // Section 2: Compact Gemini 3.x Select Box & API Key (Point 8)
+        // Section 2: Customizable 3-Stage Diet Goals (Keeps current goals as default, editable for any user!)
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "🎯 다이어트 3단계 목표 설정 (맞춤 변경 가능)",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "현재 목표가 기본 저장되어 있으며, 다른 사용자도 자유롭게 재설정 가능합니다.",
+                            fontSize = 10.5.sp,
+                            color = Color(0xFF475569),
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    OutlinedButton(
+                        onClick = {
+                            val def = previewProfile.withDefaultGoals()
+                            startWeightText = def.startWeightKg.toString()
+                            s1MinText = def.stage1WeightMinKg.toString()
+                            s1MaxText = def.stage1WeightMaxKg.toString()
+                            s1VfText = def.stage1VisceralFatMax.toString()
+                            s1MonthsText = def.stage1Months.toString()
+                            s2MinText = def.stage2WeightMinKg.toString()
+                            s2MaxText = def.stage2WeightMaxKg.toString()
+                            s2VfText = def.stage2VisceralFatMax.toString()
+                            s2MonthsText = def.stage2Months.toString()
+                            s3MinText = def.stage3WeightMinKg.toString()
+                            s3MaxText = def.stage3WeightMaxKg.toString()
+                            s3VfText = def.stage3VisceralFatMax.toString()
+                            s3MonthsText = def.stage3Months.toString()
+                            onSaveProfile(def)
+                            savedBanner = "✅ 3단계 다이어트 목표가 기본 설정(1단계 93~94kg, 2단계 85~88kg, 3단계 78~82kg)으로 복원되었습니다."
+                        },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(13.dp))
+                        Spacer(Modifier.width(3.dp))
+                        Text("기본값 복원", fontSize = 10.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
+                    }
+                }
+
+                OutlinedTextField(
+                    value = startWeightText,
+                    onValueChange = {
+                        startWeightText = it
+                        if (it.toDoubleOrNull() != null) autoPersistAll()
+                    },
+                    label = { Text("출발 기준 체중 (kg, 기본 98.9)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                StageGoalEditorRow(
+                    stageTitle = "1단계 (단기 목표)",
+                    minWeight = s1MinText,
+                    maxWeight = s1MaxText,
+                    visceralFat = s1VfText,
+                    months = s1MonthsText,
+                    onMinChange = { s1MinText = it; if (it.toDoubleOrNull() != null) autoPersistAll() },
+                    onMaxChange = { s1MaxText = it; if (it.toDoubleOrNull() != null) autoPersistAll() },
+                    onVfChange = { s1VfText = it; if (it.toIntOrNull() != null) autoPersistAll() },
+                    onMonthsChange = { s1MonthsText = it; if (it.toIntOrNull() != null) autoPersistAll() }
+                )
+
+                StageGoalEditorRow(
+                    stageTitle = "2단계 (중기 목표)",
+                    minWeight = s2MinText,
+                    maxWeight = s2MaxText,
+                    visceralFat = s2VfText,
+                    months = s2MonthsText,
+                    onMinChange = { s2MinText = it; if (it.toDoubleOrNull() != null) autoPersistAll() },
+                    onMaxChange = { s2MaxText = it; if (it.toDoubleOrNull() != null) autoPersistAll() },
+                    onVfChange = { s2VfText = it; if (it.toIntOrNull() != null) autoPersistAll() },
+                    onMonthsChange = { s2MonthsText = it; if (it.toIntOrNull() != null) autoPersistAll() }
+                )
+
+                StageGoalEditorRow(
+                    stageTitle = "3단계 (최종 목표)",
+                    minWeight = s3MinText,
+                    maxWeight = s3MaxText,
+                    visceralFat = s3VfText,
+                    months = s3MonthsText,
+                    onMinChange = { s3MinText = it; if (it.toDoubleOrNull() != null) autoPersistAll() },
+                    onMaxChange = { s3MaxText = it; if (it.toDoubleOrNull() != null) autoPersistAll() },
+                    onVfChange = { s3VfText = it; if (it.toIntOrNull() != null) autoPersistAll() },
+                    onMonthsChange = { s3MonthsText = it; if (it.toIntOrNull() != null) autoPersistAll() }
+                )
+            }
+        }
+
+        // Section 3: Compact Gemini 3.x Select Box & API Key
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -381,7 +535,6 @@ fun SettingsAndProfileScreen(
                     }
                 }
 
-                // Compact 1-line Dropdown Select Box for Gemini 3.x model!
                 val selectedOption = availableGemini3Models.firstOrNull { it.id == selectedModelId }
                 Box(modifier = Modifier.fillMaxWidth()) {
                     Surface(
@@ -490,7 +643,7 @@ fun SettingsAndProfileScreen(
             }
         }
 
-        // Section 3: Advice Strictness, Alarms & Health Connect
+        // Section 4: Advice Strictness, Alarms & Health Connect
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -624,7 +777,7 @@ fun SettingsAndProfileScreen(
                             softWrap = false
                         )
                         Text(
-                            text = "운동 리스트 · 활동 칼로리 · 체중 · 체지방 동기화 권한",
+                            text = "운동 · 활동 칼로리 · 걸음수(방식A) · 체중 · 체지방 권한",
                             fontSize = 10.5.sp,
                             color = Color(0xFF64748B),
                             maxLines = 1,
@@ -640,23 +793,88 @@ fun SettingsAndProfileScreen(
                     }
                 }
 
-                // Single Unified Save Button
                 Button(
                     onClick = {
                         autoPersistAll()
                         val p = buildCurrentProfile()
-                        savedBanner = "✅ 전체 프로필(만 ${p.ageOn(today)}세, 시작일 ${p.goalStartDate}) 및 설정이 로컬에 영구 저장되었습니다."
+                        savedBanner = "✅ 프로필·3단계 목표(1단계 ${p.stage1WeightMinKg.toInt()}~${p.stage1WeightMaxKg.toInt()}kg) 및 설정이 로컬에 영구 저장되었습니다."
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "💾 전체 프로필 및 설정 안전 저장",
+                        text = "💾 전체 프로필 · 3단계 목표 · 설정 안전 저장",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         softWrap = false
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StageGoalEditorRow(
+    stageTitle: String,
+    minWeight: String,
+    maxWeight: String,
+    visceralFat: String,
+    months: String,
+    onMinChange: (String) -> Unit,
+    onMaxChange: (String) -> Unit,
+    onVfChange: (String) -> Unit,
+    onMonthsChange: (String) -> Unit
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = stageTitle,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1,
+                softWrap = false
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                OutlinedTextField(
+                    value = minWeight,
+                    onValueChange = onMinChange,
+                    label = { Text("최소(kg)", fontSize = 9.5.sp, maxLines = 1, softWrap = false) },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = maxWeight,
+                    onValueChange = onMaxChange,
+                    label = { Text("최대(kg)", fontSize = 9.5.sp, maxLines = 1, softWrap = false) },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = visceralFat,
+                    onValueChange = onVfChange,
+                    label = { Text("내장지방(Lv)", fontSize = 9.5.sp, maxLines = 1, softWrap = false) },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+                OutlinedTextField(
+                    value = months,
+                    onValueChange = onMonthsChange,
+                    label = { Text("기간(개월)", fontSize = 9.5.sp, maxLines = 1, softWrap = false) },
+                    modifier = Modifier.weight(0.95f),
+                    singleLine = true
+                )
             }
         }
     }

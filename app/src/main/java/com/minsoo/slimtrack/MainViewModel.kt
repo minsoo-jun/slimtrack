@@ -316,6 +316,28 @@ class MainViewModel(
         }
     }
 
+    fun saveDailyStepsMethodA(totalSteps: Int) {
+        viewModelScope.launch {
+            val dateIso = _selectedDate.value.toString()
+            val weightKg = dashboardState.value?.bodyStatus?.currentWeightKg ?: 98.4
+            val bonusSteps = (totalSteps - com.minsoo.slimtrack.domain.CalorieEngine.BASELINE_STEPS_INCLUDED_IN_TDEE)
+                .coerceAtLeast(0)
+            val bonusKcal = com.minsoo.slimtrack.domain.CalorieEngine.computeBonusStepsKcal(totalSteps, weightKg)
+            val entity = ExerciseEntity(
+                hcId = "hc-steps-$dateIso",
+                dateIso = dateIso,
+                exerciseType = "일일 걸음수(방식A)",
+                title = "도보 ${totalSteps}보 (4,000보 초과 ${bonusSteps}보)",
+                durationMinutes = (totalSteps / 100).coerceAtLeast(1),
+                activeKcal = bonusKcal,
+                steps = totalSteps,
+                source = "HC_STEPS"
+            )
+            repository.dao.upsertExercise(entity)
+            _statusMessage.value = "👟 도보 ${totalSteps}보 기록 (4,000보 초과 ${bonusSteps}보 = +${bonusKcal}kcal 반영)"
+        }
+    }
+
     fun syncHealthConnect() {
         viewModelScope.launch {
             val summary = repository.syncFromHealthConnect()

@@ -260,6 +260,7 @@ fun SlimTrackRoot(
                     onSyncHealthConnectExercises = viewModel::syncHealthConnect,
                     onAddManualExercise = viewModel::addManualExercise,
                     onDeleteExercise = viewModel::deleteExercise,
+                    onSaveDailySteps = viewModel::saveDailyStepsMethodA,
                     modifier = Modifier.padding(innerPadding)
                 )
 

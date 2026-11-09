@@ -205,4 +205,32 @@ class SlimTrackDomainTest {
         assertThat(todayEval.statusColor).isEqualTo(DayStatusColor.GREEN)
         assertThat(todayEval.remainingIntakeKcal).isEqualTo(763) // 1834 + 299 - 315 - 1055 = 763
     }
+
+    @Test
+    fun `method A step bonus computes 0 kcal up to 4000 steps and proportional kcal above 4000`() {
+        assertThat(CalorieEngine.computeBonusStepsKcal(3500, 98.4)).isEqualTo(0)
+        assertThat(CalorieEngine.computeBonusStepsKcal(4000, 98.4)).isEqualTo(0)
+        // 10,000 steps -> 6,000 bonus steps -> 6000 * 98.4 * 0.00046 = 271.58 -> 272 kcal
+        assertThat(CalorieEngine.computeBonusStepsKcal(10000, 98.4)).isEqualTo(272)
+    }
+
+    @Test
+    fun `custom 3 stage goals in UserProfile override stage targets while preserving defaults`() {
+        val defaultProfile = UserProfile()
+        val defaultRes = GoalStageEvaluator.evaluate(98.4, 12, 38.5, profile = defaultProfile)
+        assertThat(defaultRes.activeStageSpec.targetWeightMinKg).isEqualTo(93.0)
+        assertThat(defaultRes.activeStageSpec.targetWeightMaxKg).isEqualTo(94.0)
+
+        val customProfile = UserProfile(
+            startWeightKg = 75.0,
+            stage1WeightMinKg = 70.0,
+            stage1WeightMaxKg = 72.0,
+            stage1VisceralFatMax = 8,
+            stage1Months = 2
+        )
+        val customRes = GoalStageEvaluator.evaluate(74.0, 9, 30.0, profile = customProfile)
+        assertThat(customRes.activeStageSpec.targetWeightMinKg).isEqualTo(70.0)
+        assertThat(customRes.activeStageSpec.targetWeightMaxKg).isEqualTo(72.0)
+        assertThat(customRes.activeStageSpec.targetWeightMidKg).isEqualTo(71.0)
+    }
 }

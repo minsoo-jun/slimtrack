@@ -125,14 +125,15 @@ class SlimTrackRepository(
             currentWeightKg = currentWeight,
             visceralFatLevel = inBody.visceralFatLevel,
             skeletalMuscleKg = inBody.skeletalMuscleKg.toDouble(),
-            startWeightKg = GoalStageEvaluator.DEFAULT_START_WEIGHT_KG,
+            startWeightKg = profile.startWeightKg,
             muscleBaselineKg = profile.muscleBaselineKg,
-            startDate = profile.goalStartDate
+            startDate = profile.goalStartDate,
+            profile = profile
         )
 
         val deficitTarget = CalorieEngine.dailyDeficitTarget(
             currentWeightKg = currentWeight,
-            targetWeightKg = stageResult.activeStage.targetWeightMidKg,
+            targetWeightKg = stageResult.activeStageSpec.targetWeightMidKg,
             today = today,
             deadline = stageResult.deadlineForActiveStage
         )
@@ -356,10 +357,6 @@ class SlimTrackRepository(
         val profile = profileStore.readBackupProfile()
         val rawStart = today.minusDays(daysBack)
         val startDate = if (profile.goalStartDate.isAfter(rawStart)) profile.goalStartDate else rawStart
-        val exercises = healthConnectRepository.readExercises(startDate, today)
-        if (exercises.isNotEmpty()) {
-            dao.upsertExercises(exercises)
-        }
 
         val hcWeights = healthConnectRepository.readWeightLogs(startDate, today)
         var weightInserted = 0
@@ -374,10 +371,24 @@ class SlimTrackRepository(
         }
 
         val latestW = dao.getLatestWeightLog()
+        val latestInBody = dao.getLatestInBody()
+        val weightForSteps = latestW?.weightKg?.toDouble()
+            ?: latestInBody?.weightKg?.toDouble()
+            ?: profile.startWeightKg
+
+        val exercises = healthConnectRepository.readExercises(startDate, today, weightForSteps)
+        if (exercises.isNotEmpty()) {
+            dao.upsertExercises(exercises)
+        }
+
+        val stepItems = exercises.filter { it.source == "HC_STEPS" }
+        val todaySteps = stepItems.firstOrNull { it.dateIso == today.toString() }
         val msg = if (exercises.isEmpty() && hcWeights.isEmpty()) {
-            "Health Connect에서 가져올 새 운동/체중/체지방 기록이 없거나 권한이 필요합니다."
+            "Health Connect에서 가져올 새 운동/걸음수/체중 기록이 없거나 권한이 필요합니다."
+        } else if (todaySteps != null) {
+            "Health 동기화 완료: 오늘 도보 ${todaySteps.steps}보(+${todaySteps.activeKcal}kcal), 운동·활동 ${exercises.size}건, 체중 ${hcWeights.size}건"
         } else {
-            "Health Connect 동기화 완료: 운동 ${exercises.size}건, 체중·체지방 ${hcWeights.size}건(신규 ${weightInserted}건)"
+            "Health 동기화 완료: 운동·걸음수 ${exercises.size}건, 체중·체지방 ${hcWeights.size}건(신규 ${weightInserted}건)"
         }
         return HealthSyncSummary(
             exercisesSynced = exercises.size,

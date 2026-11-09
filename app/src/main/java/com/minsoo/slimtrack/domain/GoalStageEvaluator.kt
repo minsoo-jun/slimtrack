@@ -1,5 +1,6 @@
 package com.minsoo.slimtrack.domain
 
+import com.minsoo.slimtrack.data.prefs.UserProfile
 import java.time.LocalDate
 
 enum class GoalStage(
@@ -24,7 +25,7 @@ enum class GoalStage(
         targetVisceralFatMax = 10,
         strategyPointsKo = listOf(
             "단기간에 무리하게 빼기보다 한 달에 2~3kg 정도씩 안전하게 감량하는 페이스가 좋습니다.",
-            "체중 5kg가 줄어드는 과정에서 대부분의 감량분이 체지방에서 소모되도록 유도하면, 내장지방 레벨도 자연스럽게 두 단계 낮아져 '표준' 경계선(10 Level)에 안착할 수 있습니다."
+            "체중 감량분이 체지방에서 소모되도록 유도하면, 내장지방 레벨도 자연스럽게 낮아져 '표준' 경계선에 안착할 수 있습니다."
         )
     ),
     STAGE_2_MID(
@@ -38,7 +39,7 @@ enum class GoalStage(
         targetVisceralFatMax = 9,
         strategyPointsKo = listOf(
             "이 시점부터는 BMI 수치도 정상 범위나 과체중 경계선으로 내려오기 시작합니다.",
-            "유산소 운동(Zone 2 저강도 유산소 등) 비중을 꾸준히 유지하면서, 근력 운동을 통해 소중한 골격근량(38.5kg)이 손실되지 않도록 방어하는 것이 핵심입니다."
+            "유산소 운동(Zone 2 저강도 유산소 등) 비중을 꾸준히 유지하면서, 근력 운동을 통해 골격근량이 손실되지 않도록 방어하는 것이 핵심입니다."
         )
     ),
     STAGE_3_LONG(
@@ -60,8 +61,52 @@ enum class GoalStage(
     }
 }
 
+data class StageSpec(
+    val stage: GoalStage,
+    val number: Int,
+    val titleKo: String,
+    val targetWeightMinKg: Double,
+    val targetWeightMaxKg: Double,
+    val targetWeightMidKg: Double,
+    val targetVisceralFatMax: Int,
+    val monthsFromStart: Int,
+    val strategyPointsKo: List<String>
+)
+
 data class StageEvaluationResult(
     val activeStage: GoalStage,
+    val activeStageSpec: StageSpec = StageSpec(
+        stage = activeStage,
+        number = activeStage.number,
+        titleKo = activeStage.titleKo,
+        targetWeightMinKg = activeStage.targetWeightMinKg,
+        targetWeightMaxKg = activeStage.targetWeightMaxKg,
+        targetWeightMidKg = activeStage.targetWeightMidKg,
+        targetVisceralFatMax = activeStage.targetVisceralFatMax,
+        monthsFromStart = when (activeStage) {
+            GoalStage.STAGE_1_SHORT -> 2
+            GoalStage.STAGE_2_MID -> 6
+            GoalStage.STAGE_3_LONG -> 12
+        },
+        strategyPointsKo = activeStage.strategyPointsKo
+    ),
+    val allStageSpecs: List<StageSpec> = GoalStage.entries.map {
+        StageSpec(
+            stage = it,
+            number = it.number,
+            titleKo = it.titleKo,
+            targetWeightMinKg = it.targetWeightMinKg,
+            targetWeightMaxKg = it.targetWeightMaxKg,
+            targetWeightMidKg = it.targetWeightMidKg,
+            targetVisceralFatMax = it.targetVisceralFatMax,
+            monthsFromStart = when (it) {
+                GoalStage.STAGE_1_SHORT -> 2
+                GoalStage.STAGE_2_MID -> 6
+                GoalStage.STAGE_3_LONG -> 12
+            },
+            strategyPointsKo = it.strategyPointsKo
+        )
+    },
     val stage1Completed: Boolean,
     val stage2Completed: Boolean,
     val stage3Completed: Boolean,
@@ -78,51 +123,116 @@ object GoalStageEvaluator {
     const val DEFAULT_MUSCLE_BASELINE_KG = 38.5
     const val MUSCLE_LOSS_THRESHOLD_KG = 0.5
 
+    fun buildStageSpecs(profile: UserProfile? = null): List<StageSpec> {
+        if (profile == null) {
+            return GoalStage.entries.map {
+                StageSpec(
+                    stage = it,
+                    number = it.number,
+                    titleKo = it.titleKo,
+                    targetWeightMinKg = it.targetWeightMinKg,
+                    targetWeightMaxKg = it.targetWeightMaxKg,
+                    targetWeightMidKg = it.targetWeightMidKg,
+                    targetVisceralFatMax = it.targetVisceralFatMax,
+                    monthsFromStart = when (it) {
+                        GoalStage.STAGE_1_SHORT -> 2
+                        GoalStage.STAGE_2_MID -> 6
+                        GoalStage.STAGE_3_LONG -> 12
+                    },
+                    strategyPointsKo = it.strategyPointsKo
+                )
+            }
+        }
+        val s1Mid = (profile.stage1WeightMinKg + profile.stage1WeightMaxKg) / 2.0
+        val s2Mid = (profile.stage2WeightMinKg + profile.stage2WeightMaxKg) / 2.0
+        val s3Mid = (profile.stage3WeightMinKg + profile.stage3WeightMaxKg) / 2.0
+        return listOf(
+            StageSpec(
+                stage = GoalStage.STAGE_1_SHORT,
+                number = 1,
+                titleKo = "1단계: 단기 목표 (${profile.stage1Months}개월 내)",
+                targetWeightMinKg = profile.stage1WeightMinKg,
+                targetWeightMaxKg = profile.stage1WeightMaxKg,
+                targetWeightMidKg = s1Mid,
+                targetVisceralFatMax = profile.stage1VisceralFatMax,
+                monthsFromStart = profile.stage1Months,
+                strategyPointsKo = GoalStage.STAGE_1_SHORT.strategyPointsKo
+            ),
+            StageSpec(
+                stage = GoalStage.STAGE_2_MID,
+                number = 2,
+                titleKo = "2단계: 중기 목표 (${profile.stage2Months}개월 내)",
+                targetWeightMinKg = profile.stage2WeightMinKg,
+                targetWeightMaxKg = profile.stage2WeightMaxKg,
+                targetWeightMidKg = s2Mid,
+                targetVisceralFatMax = profile.stage2VisceralFatMax,
+                monthsFromStart = profile.stage2Months,
+                strategyPointsKo = GoalStage.STAGE_2_MID.strategyPointsKo
+            ),
+            StageSpec(
+                stage = GoalStage.STAGE_3_LONG,
+                number = 3,
+                titleKo = "3단계: 최종 목표 (${profile.stage3Months}개월 내)",
+                targetWeightMinKg = profile.stage3WeightMinKg,
+                targetWeightMaxKg = profile.stage3WeightMaxKg,
+                targetWeightMidKg = s3Mid,
+                targetVisceralFatMax = profile.stage3VisceralFatMax,
+                monthsFromStart = profile.stage3Months,
+                strategyPointsKo = GoalStage.STAGE_3_LONG.strategyPointsKo
+            )
+        )
+    }
+
     fun evaluate(
         currentWeightKg: Double,
         visceralFatLevel: Int,
         skeletalMuscleKg: Double,
         startWeightKg: Double = DEFAULT_START_WEIGHT_KG,
         muscleBaselineKg: Double = DEFAULT_MUSCLE_BASELINE_KG,
-        startDate: LocalDate = LocalDate.of(2026, 11, 9)
+        startDate: LocalDate = LocalDate.of(2026, 11, 9),
+        profile: UserProfile? = null
     ): StageEvaluationResult {
-        val stage1Done = currentWeightKg <= GoalStage.STAGE_1_SHORT.targetWeightMaxKg &&
-            visceralFatLevel <= GoalStage.STAGE_1_SHORT.targetVisceralFatMax
-        val stage2Done = currentWeightKg <= GoalStage.STAGE_2_MID.targetWeightMaxKg &&
-            visceralFatLevel <= GoalStage.STAGE_2_MID.targetVisceralFatMax
-        val stage3Done = currentWeightKg <= GoalStage.STAGE_3_LONG.targetWeightMaxKg &&
-            visceralFatLevel <= GoalStage.STAGE_3_LONG.targetVisceralFatMax
+        val specs = buildStageSpecs(profile)
+        val s1 = specs[0]
+        val s2 = specs[1]
+        val s3 = specs[2]
 
-        val activeStage = when {
-            !stage1Done -> GoalStage.STAGE_1_SHORT
-            !stage2Done -> GoalStage.STAGE_2_MID
-            else -> GoalStage.STAGE_3_LONG
+        val stage1Done = currentWeightKg <= s1.targetWeightMaxKg &&
+            visceralFatLevel <= s1.targetVisceralFatMax
+        val stage2Done = currentWeightKg <= s2.targetWeightMaxKg &&
+            visceralFatLevel <= s2.targetVisceralFatMax
+        val stage3Done = currentWeightKg <= s3.targetWeightMaxKg &&
+            visceralFatLevel <= s3.targetVisceralFatMax
+
+        val activeSpec = when {
+            !stage1Done -> s1
+            !stage2Done -> s2
+            else -> s3
         }
 
-        val stageStartWeight = when (activeStage) {
-            GoalStage.STAGE_1_SHORT -> startWeightKg
-            GoalStage.STAGE_2_MID -> GoalStage.STAGE_1_SHORT.targetWeightMidKg
-            GoalStage.STAGE_3_LONG -> GoalStage.STAGE_2_MID.targetWeightMidKg
+        val effectiveStartWeight = profile?.startWeightKg ?: startWeightKg
+        val stageStartWeight = when (activeSpec.stage) {
+            GoalStage.STAGE_1_SHORT -> effectiveStartWeight
+            GoalStage.STAGE_2_MID -> s1.targetWeightMidKg
+            GoalStage.STAGE_3_LONG -> s2.targetWeightMidKg
         }
 
-        val totalSpan = (stageStartWeight - activeStage.targetWeightMidKg).coerceAtLeast(0.5)
+        val totalSpan = (stageStartWeight - activeSpec.targetWeightMidKg).coerceAtLeast(0.5)
         val lostInStage = (stageStartWeight - currentWeightKg).coerceAtLeast(0.0)
         val progress = (lostInStage / totalSpan).toFloat().coerceIn(0f, 1f)
 
-        val remainingKg = (currentWeightKg - activeStage.targetWeightMidKg).coerceAtLeast(0.0)
-        val visceralDelta = (visceralFatLevel - activeStage.targetVisceralFatMax).coerceAtLeast(0)
+        val remainingKg = (currentWeightKg - activeSpec.targetWeightMidKg).coerceAtLeast(0.0)
+        val visceralDelta = (visceralFatLevel - activeSpec.targetVisceralFatMax).coerceAtLeast(0)
 
         val muscleDelta = skeletalMuscleKg - muscleBaselineKg
         val muscleWarning = muscleDelta < -MUSCLE_LOSS_THRESHOLD_KG
 
-        val deadline = when (activeStage) {
-            GoalStage.STAGE_1_SHORT -> startDate.plusMonths(2) // 2027-01-09
-            GoalStage.STAGE_2_MID -> startDate.plusMonths(6)   // 2027-05-09
-            GoalStage.STAGE_3_LONG -> startDate.plusMonths(12) // 2027-11-09
-        }
+        val deadline = startDate.plusMonths(activeSpec.monthsFromStart.toLong().coerceAtLeast(1L))
 
         return StageEvaluationResult(
-            activeStage = activeStage,
+            activeStage = activeSpec.stage,
+            activeStageSpec = activeSpec,
+            allStageSpecs = specs,
             stage1Completed = stage1Done,
             stage2Completed = stage2Done,
             stage3Completed = stage3Done,

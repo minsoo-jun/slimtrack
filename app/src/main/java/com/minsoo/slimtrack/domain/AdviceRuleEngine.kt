@@ -94,7 +94,7 @@ object AdviceRuleEngine {
 
     fun evaluate(snapshot: AdviceInputSnapshot): AdviceVerdict {
         val violations = mutableListOf<AdviceViolation>()
-        val stage = snapshot.stageResult.activeStage
+        val stage = snapshot.stageResult.activeStageSpec
         val daysToDeadline = ChronoUnit.DAYS.between(snapshot.today, snapshot.stageResult.deadlineForActiveStage)
             .toInt().coerceAtLeast(1)
         val requiredPaceKgPerWeek = ((snapshot.currentWeightKg - stage.targetWeightMidKg).coerceAtLeast(0.0) / daysToDeadline) * 7.0
@@ -324,7 +324,7 @@ object AdviceRuleEngine {
         actualPace: Double
     ): List<String> {
         val lines = mutableListOf<String>()
-        val stage = snapshot.stageResult.activeStage
+        val stage = snapshot.stageResult.activeStageSpec
         lines += String.format(
             "현재 체중 %.1fkg (BMI %.1f, 내장지방 %d레벨, 골격근 %.1fkg) · %s 목표 %.1fkg까지 %.1fkg 남았습니다.",
             snapshot.currentWeightKg,

@@ -69,6 +69,23 @@ object CalorieEngine {
     const val MIN_DAILY_DEFICIT = 300
     const val MAX_DAILY_DEFICIT = 1000
     const val DEFAULT_TOLERANCE_KCAL = 150
+    const val BASELINE_STEPS_INCLUDED_IN_TDEE = 4000
+
+    /**
+     * Method A (방식 A): Basic everyday steps up to 4,000 steps are already included in TDEE (BMR * 1.2).
+     * Steps above 4,000 earn bonus exercise calories proportional to body weight
+     * (~45 kcal per 1,000 steps at 98kg -> 0.00046 * weightKg kcal per step).
+     */
+    fun computeBonusStepsKcal(
+        totalSteps: Int,
+        weightKg: Double,
+        baselineSteps: Int = BASELINE_STEPS_INCLUDED_IN_TDEE
+    ): Int {
+        val bonusSteps = (totalSteps - baselineSteps).coerceAtLeast(0)
+        if (bonusSteps == 0) return 0
+        val kcalPerStep = (weightKg.coerceAtLeast(40.0) * 0.00046)
+        return (bonusSteps * kcalPerStep).roundToInt()
+    }
 
     /**
      * Computes daily required calorie deficit from current weight to stage target weight

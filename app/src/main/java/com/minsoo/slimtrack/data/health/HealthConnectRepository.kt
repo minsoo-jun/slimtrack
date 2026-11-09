@@ -71,7 +71,11 @@ class HealthConnectRepository(private val context: Context) {
         }.getOrDefault(false)
     }
 
-    suspend fun readExercises(startDate: LocalDate, endDate: LocalDate): List<ExerciseEntity> {
+    suspend fun readExercises(
+        startDate: LocalDate,
+        endDate: LocalDate,
+        currentWeightKg: Double = 98.4
+    ): List<ExerciseEntity> {
         val client = clientOrNull() ?: return emptyList()
         val zone = ZoneId.systemDefault()
         val startInstant = startDate.atStartOfDay(zone).toInstant()
@@ -92,6 +96,13 @@ class HealthConnectRepository(private val context: Context) {
                 )
             ).records
 
+            val stepRecords = client.readRecords(
+                ReadRecordsRequest(
+                    recordType = StepsRecord::class,
+                    timeRangeFilter = TimeRangeFilter.between(startInstant, endInstant)
+                )
+            ).records
+
             val result = mutableListOf<ExerciseEntity>()
 
             for (session in sessions) {
@@ -104,10 +115,14 @@ class HealthConnectRepository(private val context: Context) {
                     .sumOf { it.energy.inKilocalories }
                     .roundToInt()
 
+                val overlappingSteps = stepRecords
+                    .filter { it.startTime < session.endTime && it.endTime > session.startTime }
+                    .sumOf { it.count }
+                    .toInt()
+
                 val estimatedKcal = if (overlappingKcal > 0) {
                     overlappingKcal
                 } else {
-                    // Fallback MET estimate (~6.5 kcal/min for 95kg user)
                     (durationMin * 6.5).roundToInt()
                 }
 
@@ -118,17 +133,49 @@ class HealthConnectRepository(private val context: Context) {
                     title = session.title?.takeIf { it.isNotBlank() } ?: mapExerciseTypeKo(session.exerciseType),
                     durationMinutes = durationMin,
                     activeKcal = estimatedKcal,
-                    steps = 0,
+                    steps = overlappingSteps,
                     source = "HC"
                 )
             }
 
-            // If a day has active calories burned records but no explicit ExerciseSessionRecord,
-            // aggregate daily active calories as an activity entry.
-            val sessionDates = result.map { it.dateIso }.toSet()
+            // Method A (방식 A): Aggregate daily steps from Health Connect StepsRecord,
+            // excluding steps already inside an explicit ExerciseSessionRecord to avoid double counting,
+            // and award bonus exercise kcal for steps above 4,000 steps/day.
+            val stepsByDate = stepRecords.groupBy { it.startTime.atZone(zone).toLocalDate().toString() }
+            for ((dateIso, dayStepList) in stepsByDate) {
+                val totalSteps = dayStepList.sumOf { it.count }.toInt()
+                val nonSessionSteps = dayStepList
+                    .filter { sr ->
+                        sessions.none { sess -> sr.startTime < sess.endTime && sr.endTime > sess.startTime }
+                    }
+                    .sumOf { it.count }
+                    .toInt()
+
+                if (totalSteps > 0) {
+                    val bonusSteps = (nonSessionSteps - com.minsoo.slimtrack.domain.CalorieEngine.BASELINE_STEPS_INCLUDED_IN_TDEE)
+                        .coerceAtLeast(0)
+                    val bonusKcal = com.minsoo.slimtrack.domain.CalorieEngine.computeBonusStepsKcal(
+                        totalSteps = nonSessionSteps,
+                        weightKg = currentWeightKg
+                    )
+                    result += ExerciseEntity(
+                        hcId = "hc-steps-$dateIso",
+                        dateIso = dateIso,
+                        exerciseType = "일일 걸음수(방식A)",
+                        title = "도보 ${totalSteps}보 (4,000보 초과 ${bonusSteps}보)",
+                        durationMinutes = (totalSteps / 100).coerceAtLeast(1),
+                        activeKcal = bonusKcal,
+                        steps = totalSteps,
+                        source = "HC_STEPS"
+                    )
+                }
+            }
+
+            // Fallback: if a day has neither ExerciseSessionRecord nor StepsRecord, check ActiveCaloriesBurnedRecord
+            val coveredDates = result.map { it.dateIso }.toSet()
             val byDate = activeCalories.groupBy { it.startTime.atZone(zone).toLocalDate().toString() }
             for ((dateIso, records) in byDate) {
-                if (dateIso !in sessionDates) {
+                if (dateIso !in coveredDates) {
                     val kcal = records.sumOf { it.energy.inKilocalories }.roundToInt()
                     if (kcal >= 30) {
                         result += ExerciseEntity(

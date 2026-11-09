@@ -94,6 +94,7 @@ fun MealAndDrinkScreen(
     onSyncHealthConnectExercises: () -> Unit,
     onAddManualExercise: (String, Int, Int) -> Unit,
     onDeleteExercise: (ExerciseEntity) -> Unit = {},
+    onSaveDailySteps: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var manualFoodName by remember { mutableStateOf("") }
@@ -107,6 +108,7 @@ fun MealAndDrinkScreen(
     var manualExTitle by remember { mutableStateOf("Zone 2 러닝") }
     var manualExMin by remember { mutableStateOf("40") }
     var manualExKcal by remember { mutableStateOf("320") }
+    var manualStepsInput by remember { mutableStateOf("10000") }
 
     Column(
         modifier = modifier
@@ -670,7 +672,7 @@ fun MealAndDrinkScreen(
             }
         }
 
-        // Section 3: Health Connect Exercise List & Manual Exercise
+        // Section 3: Health Connect Exercise List & Steps (Method A)
         Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -686,7 +688,7 @@ fun MealAndDrinkScreen(
                         Icon(Icons.Default.FitnessCenter, contentDescription = null, tint = StatusGreenText, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            text = "🏃 Health Connect 운동 리스트",
+                            text = "🏃 Health 운동 & 도보(방식 A: 4천보 초과분)",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -701,6 +703,67 @@ fun MealAndDrinkScreen(
                         Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("동기화", fontSize = 11.5.sp, maxLines = 1, softWrap = false)
+                    }
+                }
+                Text(
+                    text = "※ 방식 A: 기본 생활 걸음(4,000보)은 활동계수(1.2)에 포함되며, 4,000보를 초과한 걸음수만 체중 비례 칼로리로 자동 합산됩니다.",
+                    fontSize = 10.5.sp,
+                    color = Color(0xFF475569),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                // Quick Steps (Method A) Input Row
+                val previewSteps = manualStepsInput.toIntOrNull() ?: 0
+                val previewBonusSteps = (previewSteps - com.minsoo.slimtrack.domain.CalorieEngine.BASELINE_STEPS_INCLUDED_IN_TDEE).coerceAtLeast(0)
+                val previewBonusKcal = com.minsoo.slimtrack.domain.CalorieEngine.computeBonusStepsKcal(previewSteps, 98.4)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = manualStepsInput,
+                        onValueChange = { manualStepsInput = it },
+                        label = { Text("오늘 총 걸음수 (보)", fontSize = 10.5.sp, maxLines = 1, softWrap = false) },
+                        modifier = Modifier.weight(1.2f),
+                        singleLine = true
+                    )
+                    Surface(
+                        color = StatusGreenBg,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1.3f)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                text = "초과 ${previewBonusSteps}보",
+                                fontSize = 10.sp,
+                                color = StatusGreenText,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                            Text(
+                                text = "+${previewBonusKcal} kcal",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = StatusGreenText,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            if (previewSteps > 0) {
+                                onSaveDailySteps(previewSteps)
+                            }
+                        },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
+                    ) {
+                        Text("걸음 반영", fontSize = 11.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false)
                     }
                 }
 
