@@ -222,7 +222,7 @@ private fun StageHeaderCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -232,25 +232,16 @@ private fun StageHeaderCard(
                     painter = painterResource(id = R.drawable.sticker_oh_yeah),
                     contentDescription = "오예 목표 캐릭터",
                     modifier = Modifier
-                        .size(42.dp)
-                        .clip(RoundedCornerShape(10.dp))
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(8.dp))
                 )
-                Spacer(Modifier.width(8.dp))
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Spacer(Modifier.width(6.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "🎯 ${stage.number}단계 목표 (${stage.targetWeightMinKg.toInt()}~${stage.targetWeightMaxKg.toInt()}kg · 내장지방 ${stage.targetVisceralFatMax}Lv)",
-                        fontSize = 14.sp,
+                        text = "🎯 ${stage.number}단계 목표 (${stage.targetWeightMinKg.toInt()}~${stage.targetWeightMaxKg.toInt()}kg · ${stage.targetVisceralFatMax}Lv)",
+                        fontSize = 13.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "🔥 마감 D-${daysLeft} (${daysLeft}일 남음 · ${body.stageResult.deadlineForActiveStage}) · 남은 감량 ${String.format("%.1fkg", body.stageResult.remainingKgToActiveStage)}",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = StatusRedText,
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis
@@ -263,19 +254,19 @@ private fun StageHeaderCard(
                     modifier = Modifier.clickable(onClick = onSyncClick)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             Icons.Default.Sync,
                             contentDescription = "Health 동기화",
-                            modifier = Modifier.size(14.dp),
+                            modifier = Modifier.size(13.dp),
                             tint = MaterialTheme.colorScheme.onPrimaryContainer
                         )
-                        Spacer(Modifier.width(4.dp))
+                        Spacer(Modifier.width(3.dp))
                         Text(
-                            text = "Health 동기화",
-                            fontSize = 11.sp,
+                            text = "동기화",
+                            fontSize = 10.5.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                             maxLines = 1,
@@ -284,6 +275,17 @@ private fun StageHeaderCard(
                     }
                 }
             }
+
+            // Full-width D-Day & remaining weight row so it never truncates at 125%~155% font scale!
+            Text(
+                text = "🔥 마감 D-${daysLeft} (${daysLeft}일 남음 · ${body.stageResult.deadlineForActiveStage}) · 남은 감량 ${String.format("%.1fkg", body.stageResult.remainingKgToActiveStage)}",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = StatusRedText,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+            )
 
             LinearProgressIndicator(
                 progress = { body.stageResult.weightProgressPct },
@@ -773,87 +775,90 @@ private fun SelectedDateDetailCard(
                     painter = painterResource(id = dailyStickerRes),
                     contentDescription = "오늘의 상태 스티커",
                     modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(10.dp))
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(8.dp))
                 )
-                Spacer(Modifier.width(8.dp))
-                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(
-                        text = "📅 $date 일일 칼로리 수치",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    val subtitleText = when {
-                        date.isBefore(effectiveStartDate) -> "⚪ 기록 유효 시작일($effectiveStartDate) 이전 날짜"
-                        evaluation.isMissingMealFailure -> "🔴 식사 미기록 (실패 · 오늘 섭취 가능 ${evaluation.plan.recommendedIntake} kcal)"
-                        rem >= 0 -> "🟢 오늘 앞으로 ${rem} kcal 더 섭취 가능"
-                        else -> "🔴 오늘 허용 칼로리 ${-rem} kcal 초과 섭취"
-                    }
-                    val pillBg = when {
-                        date.isBefore(effectiveStartDate) -> StatusGrayBg
-                        evaluation.statusColor == DayStatusColor.RED -> StatusRedBg
-                        evaluation.statusColor == DayStatusColor.YELLOW -> StatusYellowBg
-                        else -> StatusGreenBg
-                    }
-                    val pillBorder = when {
-                        date.isBefore(effectiveStartDate) -> StatusGrayBorder
-                        evaluation.statusColor == DayStatusColor.RED -> StatusRedBorder
-                        evaluation.statusColor == DayStatusColor.YELLOW -> StatusYellowBorder
-                        else -> StatusGreenBorder
-                    }
-                    val subtitleColor = when {
-                        date.isBefore(effectiveStartDate) -> StatusGrayText
-                        evaluation.statusColor == DayStatusColor.RED -> StatusRedText
-                        evaluation.statusColor == DayStatusColor.YELLOW -> StatusYellowText
-                        else -> StatusGreenText
-                    }
-                    Surface(
-                        color = pillBg,
-                        shape = RoundedCornerShape(6.dp),
-                        modifier = Modifier.border(1.dp, pillBorder, RoundedCornerShape(6.dp))
-                    ) {
-                        Text(
-                            text = subtitleText,
-                            fontSize = 11.5.sp,
-                            color = subtitleColor,
-                            fontWeight = FontWeight.ExtraBold,
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = "📅 $date 일일 칼로리 수치",
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(6.dp))
                 Surface(
                     color = MaterialTheme.colorScheme.primary,
                     shape = RoundedCornerShape(18.dp),
                     modifier = Modifier.clickable(onClick = onAddMealClick)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
                             Icons.Default.Add,
                             contentDescription = null,
                             tint = Color.White,
-                            modifier = Modifier.size(14.dp)
+                            modifier = Modifier.size(13.dp)
                         )
-                        Spacer(Modifier.width(3.dp))
+                        Spacer(Modifier.width(2.dp))
                         Text(
                             text = "식단 입력",
                             color = Color.White,
-                            fontSize = 11.5.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
                             softWrap = false
                         )
                     }
                 }
+            }
+
+            // Full-width highlighted banner for remaining intakeable calories so it NEVER truncates!
+            val subtitleText = when {
+                date.isBefore(effectiveStartDate) -> "⚪ 기록 유효 시작일($effectiveStartDate) 이전 날짜"
+                evaluation.isMissingMealFailure -> "🔴 식사 미기록 (실패 · 오늘 섭취 가능 ${evaluation.plan.recommendedIntake} kcal)"
+                rem >= 0 -> "🟢 오늘 앞으로 ${rem} kcal 더 섭취 가능"
+                else -> "🔴 오늘 허용 칼로리 ${-rem} kcal 초과 섭취"
+            }
+            val pillBg = when {
+                date.isBefore(effectiveStartDate) -> StatusGrayBg
+                evaluation.statusColor == DayStatusColor.RED -> StatusRedBg
+                evaluation.statusColor == DayStatusColor.YELLOW -> StatusYellowBg
+                else -> StatusGreenBg
+            }
+            val pillBorder = when {
+                date.isBefore(effectiveStartDate) -> StatusGrayBorder
+                evaluation.statusColor == DayStatusColor.RED -> StatusRedBorder
+                evaluation.statusColor == DayStatusColor.YELLOW -> StatusYellowBorder
+                else -> StatusGreenBorder
+            }
+            val subtitleColor = when {
+                date.isBefore(effectiveStartDate) -> StatusGrayText
+                evaluation.statusColor == DayStatusColor.RED -> StatusRedText
+                evaluation.statusColor == DayStatusColor.YELLOW -> StatusYellowText
+                else -> StatusGreenText
+            }
+            Surface(
+                color = pillBg,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.5.dp, pillBorder, RoundedCornerShape(8.dp))
+            ) {
+                Text(
+                    text = subtitleText,
+                    fontSize = 12.sp,
+                    color = subtitleColor,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                )
             }
 
             // Visual Canvas Calorie Gauge + 4-Column Metric Grid
@@ -968,9 +973,9 @@ private fun SelectedDateDetailCard(
                                     Spacer(Modifier.width(5.dp))
                                     val exDisplay = if (ex.source == "HC_STEPS") {
                                         val bonus = (ex.steps - 4000).coerceAtLeast(0)
-                                        "👟 [Health] 도보 ${ex.steps}보(초과 ${bonus}보) — +${ex.activeKcal}kcal"
+                                        "👟 +${ex.activeKcal}kcal · 도보 ${ex.steps}보(초과 ${bonus}보)"
                                     } else {
-                                        "[${ex.source}] ${ex.title} (${ex.durationMinutes}분) — +${ex.activeKcal}kcal"
+                                        "+${ex.activeKcal}kcal · [${ex.source}] ${ex.title}(${ex.durationMinutes}분)"
                                     }
                                     Text(
                                         text = exDisplay,
@@ -1053,7 +1058,7 @@ private fun CalorieBalanceGraphicBox(evaluation: DayEvaluation) {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "실제 섭취 ${evaluation.totalIntakeKcal} / 허용량(권장+운동) ${allowedBudget} kcal",
+                        text = "섭취 ${evaluation.totalIntakeKcal} / 허용 ${allowedBudget}kcal",
                         fontSize = 10.5.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = Color(0xFF334155),
@@ -1061,7 +1066,7 @@ private fun CalorieBalanceGraphicBox(evaluation: DayEvaluation) {
                         softWrap = false
                     )
                     Text(
-                        text = if (rem >= 0) "섭취 가능 ${rem} kcal" else "${-rem} kcal 초과",
+                        text = if (rem >= 0) "잔여 ${rem}kcal" else "${-rem}kcal 초과",
                         fontSize = 10.5.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = if (rem >= 0) StatusGreenText else StatusRedText,
