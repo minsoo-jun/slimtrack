@@ -18,10 +18,15 @@
     <uses-permission android:name="android.permission.health.READ_LEAN_BODY_MASS" />
     <uses-permission android:name="android.permission.health.READ_BASAL_METABOLIC_RATE" />
 
+    <!-- Health Connect Write Permission for Instant Weight Sync -->
+    <uses-permission android:name="android.permission.health.WRITE_WEIGHT" />
+
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
+        <package android:name="com.google.android.apps.fitness" />
+        <package android:name="com.fitbit.FitbitMobile" />
         <intent>
             <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
         </intent>

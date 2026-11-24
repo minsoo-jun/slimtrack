@@ -1,7 +1,13 @@
 package com.minsoo.slimtrack.domain
 
+import com.minsoo.slimtrack.data.db.InBodyEntity
+import com.minsoo.slimtrack.data.db.WeightLogEntity
 import com.minsoo.slimtrack.data.prefs.UserProfile
+import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.temporal.ChronoUnit
+import java.util.Locale
+import kotlin.math.abs
 
 enum class GoalStage(
     val number: Int,
@@ -71,7 +77,10 @@ data class StageSpec(
     val targetVisceralFatMax: Int,
     val monthsFromStart: Int,
     val strategyPointsKo: List<String>
-)
+) {
+    val targetWeightMidFormatted: String
+        get() = String.format(java.util.Locale.US, "%.1f", targetWeightMidKg)
+}
 
 data class StageEvaluationResult(
     val activeStage: GoalStage,
@@ -197,11 +206,11 @@ object GoalStageEvaluator {
         val s2 = specs[1]
         val s3 = specs[2]
 
-        val stage1Done = currentWeightKg <= s1.targetWeightMaxKg &&
+        val stage1Done = currentWeightKg <= s1.targetWeightMidKg &&
             visceralFatLevel <= s1.targetVisceralFatMax
-        val stage2Done = currentWeightKg <= s2.targetWeightMaxKg &&
+        val stage2Done = currentWeightKg <= s2.targetWeightMidKg &&
             visceralFatLevel <= s2.targetVisceralFatMax
-        val stage3Done = currentWeightKg <= s3.targetWeightMaxKg &&
+        val stage3Done = currentWeightKg <= s3.targetWeightMidKg &&
             visceralFatLevel <= s3.targetVisceralFatMax
 
         val activeSpec = when {
@@ -242,6 +251,273 @@ object GoalStageEvaluator {
             skeletalMuscleLossWarning = muscleWarning,
             skeletalMuscleDeltaKg = muscleDelta,
             deadlineForActiveStage = deadline
+        )
+    }
+}
+
+enum class GoalMetricType(
+    val titleKo: String,
+    val shortLabelKo: String,
+    val unit: String,
+    val lowerIsBetter: Boolean,
+    val decimals: Int
+) {
+    WEIGHT("체중(kg)", "체중", "kg", lowerIsBetter = true, decimals = 1),
+    VISCERAL_FAT("내장지방(Lv)", "내장지방", "Lv", lowerIsBetter = true, decimals = 1),
+    SKELETAL_MUSCLE("골격근(kg)", "골격근", "kg", lowerIsBetter = false, decimals = 1),
+    BMR("공식BMR(kcal)", "공식BMR", "kcal", lowerIsBetter = false, decimals = 0),
+    BMI("BMI(체질량)", "BMI", "", lowerIsBetter = true, decimals = 1);
+
+    fun formatValue(v: Float, includeUnit: Boolean = true): String {
+        val num = if (decimals == 0) {
+            String.format(Locale.US, "%d", v.toInt())
+        } else {
+            String.format(Locale.US, "%.${decimals}f", v)
+        }
+        return if (includeUnit && unit.isNotEmpty()) "$num$unit" else num
+    }
+}
+
+data class DailyGoalComparisonPoint(
+    val date: LocalDate,
+    val dayOfWeekKo: String,
+    val planTargetValue: Float,
+    val actualValue: Float,
+    val isMeasuredOnDay: Boolean,
+    val diffFromPlanTarget: Float,
+    val isAchievingTargetPace: Boolean
+)
+
+data class GoalMetricComparisonSeries(
+    val metric: GoalMetricType,
+    val stageNumber: Int,
+    val startDate: LocalDate,
+    val today: LocalDate,
+    val deadline: LocalDate,
+    val totalStageDays: Int,
+    val elapsedDays: Int,
+    val remainingDays: Int,
+    val startValue: Float,
+    val todayTargetValue: Float,
+    val currentValue: Float,
+    val targetMidValue: Float,
+    val requiredDailyDeltaFromToday: Float,
+    val requiredWeeklyDeltaFromToday: Float,
+    val dailyPoints: List<DailyGoalComparisonPoint>
+) {
+    val isTodayOnTrack: Boolean
+        get() = if (metric.lowerIsBetter) {
+            currentValue <= todayTargetValue + 0.05f
+        } else {
+            currentValue >= todayTargetValue - 0.05f
+        }
+
+    val todayGapFromTarget: Float
+        get() = currentValue - todayTargetValue
+}
+
+object GoalTrajectoryCalculator {
+    private fun dayOfWeekKo(date: LocalDate): String = when (date.dayOfWeek) {
+        DayOfWeek.MONDAY -> "월"
+        DayOfWeek.TUESDAY -> "화"
+        DayOfWeek.WEDNESDAY -> "수"
+        DayOfWeek.THURSDAY -> "목"
+        DayOfWeek.FRIDAY -> "금"
+        DayOfWeek.SATURDAY -> "토"
+        DayOfWeek.SUNDAY -> "일"
+    }
+
+    fun buildSeries(
+        metric: GoalMetricType,
+        today: LocalDate,
+        profile: UserProfile,
+        stageResult: StageEvaluationResult,
+        currentWeightKg: Double,
+        currentBmrKcal: Int,
+        currentBmi: Double,
+        latestInBody: InBodyEntity,
+        weightLogs: List<WeightLogEntity>,
+        inBodyHistory: List<InBodyEntity>
+    ): GoalMetricComparisonSeries {
+        val activeSpec = stageResult.activeStageSpec
+        val startDate = profile.goalStartDate
+        val deadline = stageResult.deadlineForActiveStage
+        val totalStageDays = ChronoUnit.DAYS.between(startDate, deadline).toInt().coerceAtLeast(1)
+        val elapsedDays = ChronoUnit.DAYS.between(startDate, today).toInt().coerceIn(0, totalStageDays)
+        val remainingDays = ChronoUnit.DAYS.between(today, deadline).toInt().coerceAtLeast(1)
+
+        val sortedWeights = weightLogs.sortedBy { it.measuredAtIso }
+        val sortedInBodies = (inBodyHistory + latestInBody)
+            .distinctBy { "${it.dateIso}_${it.measuredAtIso}" }
+            .sortedBy { it.measuredAtIso }
+
+        val weightsByDate: Map<LocalDate, Float> = sortedWeights
+            .mapNotNull { log ->
+                runCatching { LocalDate.parse(log.dateIso) to log.weightKg }.getOrNull()
+            }
+            .toMap()
+
+        val inBodyByDate: Map<LocalDate, InBodyEntity> = sortedInBodies
+            .mapNotNull { ib ->
+                runCatching { LocalDate.parse(ib.dateIso) to ib }.getOrNull()
+            }
+            .toMap()
+
+        // Determine Start Value, Current Value, and Midpoint Target Value for the selected metric
+        val startWeight = if (startDate.isBefore(today)) {
+            weightsByDate[startDate]
+                ?: sortedWeights.firstOrNull { it.dateIso >= startDate.toString() && it.dateIso < today.toString() }?.weightKg
+                ?: profile.startWeightKg.toFloat()
+        } else {
+            profile.startWeightKg.toFloat()
+        }
+
+        val earliestInBody = sortedInBodies.firstOrNull() ?: latestInBody
+
+        val (startValue, currentValue, targetMidValue) = when (metric) {
+            GoalMetricType.WEIGHT -> Triple(
+                startWeight,
+                currentWeightKg.toFloat(),
+                activeSpec.targetWeightMidKg.toFloat()
+            )
+            GoalMetricType.VISCERAL_FAT -> {
+                val startVf = maxOf(
+                    earliestInBody.visceralFatLevel.toFloat(),
+                    latestInBody.visceralFatLevel.toFloat()
+                )
+                val targetVf = activeSpec.targetVisceralFatMax.toFloat()
+                Triple(startVf, latestInBody.visceralFatLevel.toFloat(), targetVf)
+            }
+            GoalMetricType.SKELETAL_MUSCLE -> {
+                val startSmm = earliestInBody.skeletalMuscleKg.takeIf { it > 10f }
+                    ?: profile.muscleBaselineKg.toFloat()
+                val targetSmm = profile.muscleBaselineKg.toFloat()
+                Triple(startSmm, latestInBody.skeletalMuscleKg, targetSmm)
+            }
+            GoalMetricType.BMR -> {
+                val startBmr = BmrCalculator.inbodyBmr(
+                    earliestInBody.weightKg.toDouble(),
+                    earliestInBody.bodyFatMassKg.toDouble()
+                ).toFloat()
+                val targetBmr = maxOf(startBmr, currentBmrKcal.toFloat())
+                Triple(startBmr, currentBmrKcal.toFloat(), targetBmr)
+            }
+            GoalMetricType.BMI -> {
+                val startBmi = profile.bmi(startWeight.toDouble()).toFloat()
+                val targetBmi = profile.bmi(activeSpec.targetWeightMidKg).toFloat()
+                Triple(startBmi, currentBmi.toFloat(), targetBmi)
+            }
+        }
+
+        fun planTargetAt(date: LocalDate): Float {
+            val d = ChronoUnit.DAYS.between(startDate, date).toFloat().coerceIn(0f, totalStageDays.toFloat())
+            val ratio = d / totalStageDays.toFloat()
+            return startValue + (targetMidValue - startValue) * ratio
+        }
+
+        val todayTargetValue = planTargetAt(today)
+        val requiredDailyDelta = (targetMidValue - currentValue) / remainingDays.toFloat()
+        val requiredWeeklyDelta = requiredDailyDelta * 7f
+
+        // Build daily comparison window: from startDate (or at least 6 days before today if startDate is very recent) to today
+        val rawWindowStart = if (ChronoUnit.DAYS.between(startDate, today) >= 4) {
+            startDate
+        } else {
+            minOf(startDate, today.minusDays(6))
+        }
+        // Cap daily series to at most last 21 days so the daily chart stays crisp and readable
+        val windowStart = maxOf(rawWindowStart, today.minusDays(20))
+
+        // Build sparse measured map for the metric
+        val measuredByDate = mutableMapOf<LocalDate, Float>()
+        when (metric) {
+            GoalMetricType.WEIGHT -> {
+                inBodyByDate.forEach { (d, ib) -> measuredByDate[d] = ib.weightKg }
+                weightsByDate.forEach { (d, w) -> measuredByDate[d] = w }
+            }
+            GoalMetricType.VISCERAL_FAT -> {
+                inBodyByDate.forEach { (d, ib) -> measuredByDate[d] = ib.visceralFatLevel.toFloat() }
+            }
+            GoalMetricType.SKELETAL_MUSCLE -> {
+                inBodyByDate.forEach { (d, ib) -> measuredByDate[d] = ib.skeletalMuscleKg }
+            }
+            GoalMetricType.BMR -> {
+                inBodyByDate.forEach { (d, ib) ->
+                    measuredByDate[d] = BmrCalculator.inbodyBmr(
+                        ib.weightKg.toDouble(),
+                        ib.bodyFatMassKg.toDouble()
+                    ).toFloat()
+                }
+            }
+            GoalMetricType.BMI -> {
+                inBodyByDate.forEach { (d, ib) -> measuredByDate[d] = profile.bmi(ib.weightKg.toDouble()).toFloat() }
+                weightsByDate.forEach { (d, w) -> measuredByDate[d] = profile.bmi(w.toDouble()).toFloat() }
+            }
+        }
+        measuredByDate[startDate] = measuredByDate[startDate] ?: startValue
+        measuredByDate[today] = currentValue
+
+        val totalWindowDays = ChronoUnit.DAYS.between(windowStart, today).toInt().coerceAtLeast(0)
+        val dailyPoints = mutableListOf<DailyGoalComparisonPoint>()
+        var lastKnownVal = measuredByDate.entries
+            .filter { !it.key.isAfter(windowStart) }
+            .maxByOrNull { it.key }
+            ?.value ?: startValue
+
+        for (offset in 0..totalWindowDays) {
+            val d = windowStart.plusDays(offset.toLong())
+            val direct = measuredByDate[d]
+            val isMeasured = direct != null
+            val actualVal = if (direct != null) {
+                lastKnownVal = direct
+                direct
+            } else {
+                // Linearly interpolate if there is a next known point, else carry forward
+                val prevEntry = measuredByDate.entries.filter { it.key.isBefore(d) }.maxByOrNull { it.key }
+                val nextEntry = measuredByDate.entries.filter { it.key.isAfter(d) }.minByOrNull { it.key }
+                if (prevEntry != null && nextEntry != null) {
+                    val span = ChronoUnit.DAYS.between(prevEntry.key, nextEntry.key).toFloat().coerceAtLeast(1f)
+                    val step = ChronoUnit.DAYS.between(prevEntry.key, d).toFloat()
+                    prevEntry.value + (nextEntry.value - prevEntry.value) * (step / span)
+                } else {
+                    lastKnownVal
+                }
+            }
+
+            val planTarget = planTargetAt(d)
+            val diff = actualVal - planTarget
+            val achieving = if (metric.lowerIsBetter) {
+                actualVal <= planTarget + 0.05f
+            } else {
+                actualVal >= planTarget - 0.05f
+            }
+            dailyPoints += DailyGoalComparisonPoint(
+                date = d,
+                dayOfWeekKo = dayOfWeekKo(d),
+                planTargetValue = planTarget,
+                actualValue = actualVal,
+                isMeasuredOnDay = isMeasured,
+                diffFromPlanTarget = diff,
+                isAchievingTargetPace = achieving
+            )
+        }
+
+        return GoalMetricComparisonSeries(
+            metric = metric,
+            stageNumber = activeSpec.number,
+            startDate = startDate,
+            today = today,
+            deadline = deadline,
+            totalStageDays = totalStageDays,
+            elapsedDays = elapsedDays,
+            remainingDays = remainingDays,
+            startValue = startValue,
+            todayTargetValue = todayTargetValue,
+            currentValue = currentValue,
+            targetMidValue = targetMidValue,
+            requiredDailyDeltaFromToday = requiredDailyDelta,
+            requiredWeeklyDeltaFromToday = requiredWeeklyDelta,
+            dailyPoints = dailyPoints
         )
     }
 }

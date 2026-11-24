@@ -1,6 +1,7 @@
 package com.minsoo.slimtrack.domain
 
 import com.google.common.truth.Truth.assertThat
+import com.minsoo.slimtrack.data.db.FoodItemEntry
 import com.minsoo.slimtrack.data.prefs.Sex
 import com.minsoo.slimtrack.data.prefs.UserProfile
 import com.minsoo.slimtrack.work.AlarmScheduler
@@ -46,9 +47,10 @@ class SlimTrackDomainTest {
         val today = LocalDate.of(2026, 11, 9)
         val plan = CalorieEngine.dailyPlan(1834, 1.2, 682)
 
-        val missingMealDay = CalorieEngine.evaluateDay(
+        // Past day with 0 meals is marked as RED failure, but remainingIntakeKcal STILL computes 1834 + 300 = 2134 (never 0!)
+        val pastMissingMealDay = CalorieEngine.evaluateDay(
             input = DayRecordInput(
-                date = today,
+                date = today.minusDays(1),
                 mealIntakeKcal = 0,
                 drinkIntakeKcal = 0,
                 exerciseKcal = 300,
@@ -59,8 +61,27 @@ class SlimTrackDomainTest {
             toleranceKcal = 150,
             missingMealAsFailure = true
         )
-        assertThat(missingMealDay.statusColor).isEqualTo(DayStatusColor.RED)
-        assertThat(missingMealDay.isMissingMealFailure).isTrue()
+        assertThat(pastMissingMealDay.statusColor).isEqualTo(DayStatusColor.RED)
+        assertThat(pastMissingMealDay.isMissingMealFailure).isTrue()
+        assertThat(pastMissingMealDay.remainingIntakeKcal).isEqualTo(2134)
+
+        // Today in the morning before any meal is logged: NOT a failure, status is GREEN, and remainingIntakeKcal = 1834 + 244 = 2078 kcal!
+        val todayMorningUnlogged = CalorieEngine.evaluateDay(
+            input = DayRecordInput(
+                date = today,
+                mealIntakeKcal = 0,
+                drinkIntakeKcal = 0,
+                exerciseKcal = 244,
+                mealCount = 0
+            ),
+            plan = plan,
+            today = today,
+            toleranceKcal = 150,
+            missingMealAsFailure = true
+        )
+        assertThat(todayMorningUnlogged.statusColor).isEqualTo(DayStatusColor.GREEN)
+        assertThat(todayMorningUnlogged.isMissingMealFailure).isFalse()
+        assertThat(todayMorningUnlogged.remainingIntakeKcal).isEqualTo(2078)
 
         val futureDay = CalorieEngine.evaluateDay(
             input = DayRecordInput(today.plusDays(1), 0, 0, 0, 0),
@@ -126,8 +147,8 @@ class SlimTrackDomainTest {
         val plan = CalorieEngine.dailyPlan(1834, 1.2, 682)
         val stageRes = GoalStageEvaluator.evaluate(98.9, 12, 37.8)
 
-        val day1 = CalorieEngine.evaluateDay(DayRecordInput(today.minusDays(1), 2600, 328, 0, 2), plan, today)
-        val day2 = CalorieEngine.evaluateDay(DayRecordInput(today, 0, 0, 0, 0), plan, today) // missing meal
+        val day1 = CalorieEngine.evaluateDay(DayRecordInput(today.minusDays(2), 2600, 328, 0, 2), plan, today)
+        val day2 = CalorieEngine.evaluateDay(DayRecordInput(today.minusDays(1), 0, 0, 0, 0), plan, today) // past day missing meal
 
         val rollup = PeriodRollup(today.minusDays(1), today.plusDays(5), -950, 6, 158, 1834, 473)
         val snapshot = AdviceInputSnapshot(
@@ -236,5 +257,76 @@ class SlimTrackDomainTest {
         assertThat(customRes.activeStageSpec.targetWeightMinKg).isEqualTo(70.0)
         assertThat(customRes.activeStageSpec.targetWeightMaxKg).isEqualTo(72.0)
         assertThat(customRes.activeStageSpec.targetWeightMidKg).isEqualTo(71.0)
+    }
+
+    @Test
+    fun `AlcoholDetector correctly identifies alcoholic drinks and parses calories`() {
+        // Positive tests
+        assertThat(AlcoholDetector.isAlcohol("참이슬 소주 1병")).isTrue()
+        assertThat(AlcoholDetector.isAlcohol("생맥주 500cc")).isTrue()
+        assertThat(AlcoholDetector.isAlcohol("레드 와인 1잔")).isTrue()
+        assertThat(AlcoholDetector.isAlcohol("하이볼 2잔")).isTrue()
+        assertThat(AlcoholDetector.isAlcohol("산토리 위스키 30ml")).isTrue()
+        assertThat(AlcoholDetector.isAlcohol("막걸리 한 사발")).isTrue()
+
+        // Negative tests (normal food and non-alcoholic drinks)
+        assertThat(AlcoholDetector.isAlcohol("닭가슴살 샐러드")).isFalse()
+        assertThat(AlcoholDetector.isAlcohol("현미밥 200g")).isFalse()
+        assertThat(AlcoholDetector.isAlcohol("프로틴 음료 375ml")).isFalse()
+        assertThat(AlcoholDetector.isAlcohol("우롱차 500ml")).isFalse()
+        assertThat(AlcoholDetector.isAlcohol("아이스 아메리카노")).isFalse()
+
+        // Extraction test
+        val extracted = AlcoholDetector.extract(
+            FoodItemEntry(
+                name = "소주",
+                portion = "1병 360ml",
+                kcal = 400
+            )
+        )
+        assertThat(extracted.preset).isEqualTo(AlcoholPreset.SOJU)
+        assertThat(extracted.kcal).isEqualTo(400)
+        assertThat(extracted.volumeMl).isEqualTo(360)
+        assertThat(extracted.abvPct).isEqualTo(16.5f)
+    }
+
+    @Test
+    fun `goalTrajectoryCalculator uses midpoint target and builds daily target vs actual comparison series`() {
+        val startDate = LocalDate.of(2026, 11, 9)
+        val today = LocalDate.of(2026, 11, 18) // 9 days elapsed out of 61 days (deadline 2027-01-09)
+        val profile = UserProfile(goalStartDate = startDate, startWeightKg = 98.9)
+        val stageResult = GoalStageEvaluator.evaluate(
+            currentWeightKg = 97.2,
+            visceralFatLevel = 13,
+            skeletalMuscleKg = 37.6,
+            startDate = startDate,
+            profile = profile
+        )
+        assertThat(stageResult.activeStageSpec.targetWeightMidKg).isEqualTo(93.5)
+        assertThat(stageResult.activeStageSpec.targetWeightMidFormatted).isEqualTo("93.5")
+
+        val series = GoalTrajectoryCalculator.buildSeries(
+            metric = GoalMetricType.WEIGHT,
+            today = today,
+            profile = profile,
+            stageResult = stageResult,
+            currentWeightKg = 97.2,
+            currentBmrKcal = 1798,
+            currentBmi = 31.4,
+            latestInBody = com.minsoo.slimtrack.data.db.AppDatabase.defaultSeedInBody(),
+            weightLogs = listOf(
+                com.minsoo.slimtrack.data.db.WeightLogEntity(1, "2026-11-09T08:00:00", "2026-11-09", 98.9f, 31.4f, "HC", "hc1"),
+                com.minsoo.slimtrack.data.db.WeightLogEntity(2, "2026-11-12T08:00:00", "2026-11-12", 98.1f, 31.2f, "HC", "hc2"),
+                com.minsoo.slimtrack.data.db.WeightLogEntity(3, "2026-11-18T08:00:00", "2026-11-18", 97.2f, 31.0f, "HC", "hc3")
+            ),
+            inBodyHistory = emptyList()
+        )
+        assertThat(series.targetMidValue).isWithin(0.01f).of(93.5f)
+        assertThat(series.startValue).isWithin(0.01f).of(98.9f)
+        assertThat(series.currentValue).isWithin(0.01f).of(97.2f)
+        // Today's target weight along 61-day linear path at day 9: 98.9 + (93.5 - 98.9) * (9/61) = 98.10f
+        assertThat(series.todayTargetValue).isWithin(0.1f).of(98.1f)
+        assertThat(series.isTodayOnTrack).isTrue()
+        assertThat(series.dailyPoints).hasSize(10) // Nov 9 .. Nov 18 inclusive
     }
 }

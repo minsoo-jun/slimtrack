@@ -86,9 +86,9 @@ class SlimTrackScreenshotTest {
         for (d in 1..ym.lengthOfMonth()) {
             val date = ym.atDay(d)
             val input = when (d) {
-                8 -> DayRecordInput(date, 1600, 137, 200, 3) // Day 8: had alcohol (137 kcal) -> shows 🍺 in calendar!
-                9 -> DayRecordInput(date, 1055, 0, 241, 1)   // Today: 1834 - 1055 + 241(운동158+도보83) = 1020 kcal remaining
-                else -> DayRecordInput(date, 0, 0, 0, 0)
+                8 -> DayRecordInput(date, 1600, 137, 200, 3, 75f) // Day 8: had alcohol (137 kcal) -> full-cell 🍺 background in calendar!
+                9 -> DayRecordInput(date, 1055, 0, 241, 1, 55f)   // Today: 1834 - 1055 + 241(운동158+도보83) = 1020 kcal remaining, 55g protein
+                else -> DayRecordInput(date, 0, 0, 0, 0, 0f)
             }
             evals[date] = CalorieEngine.evaluateDay(
                 input = input,
@@ -96,7 +96,7 @@ class SlimTrackScreenshotTest {
                 today = today,
                 toleranceKcal = 150,
                 missingMealAsFailure = true,
-                effectiveStartDate = today
+                effectiveStartDate = LocalDate.of(2026, 11, 7)
             )
         }
         val list = evals.values.toList()
@@ -138,7 +138,14 @@ class SlimTrackScreenshotTest {
             monthlyRollup = monthly,
             weightloggedDates = setOf(today),
             latestAdvice = null,
-            liveVerdict = verdict
+            liveVerdict = verdict,
+            weightLogs = listOf(
+                WeightLogEntity(1, "2026-11-05T08:00:00", "2026-11-05", 98.9f, 31.5f, "HC", "hc0"),
+                WeightLogEntity(2, "2026-11-07T08:00:00", "2026-11-07", 98.7f, 31.4f, "HC", "hc1"),
+                WeightLogEntity(3, "2026-11-08T08:00:00", "2026-11-08", 98.5f, 31.1f, "HC", "hc2"),
+                WeightLogEntity(4, "2026-11-09T08:00:00", "2026-11-09", 98.4f, 30.8f, "HC", "hc3")
+            ),
+            inBodyHistory = listOf(seedInBody)
         )
     }
 
@@ -157,9 +164,9 @@ class SlimTrackScreenshotTest {
                     selectedDateDrinks = emptyList(),
                     selectedDateExercises = listOf(
                         ExerciseEntity("hc-steps-2026-11-09", "2026-11-09", "일일 걸음수(방식A)", "도보 5825보 (4,000보 초과 1825보)", 0, 83, 5825, "HC_STEPS"),
-                        ExerciseEntity("hc-1", "2026-11-09", "운동", "운동", 46, 158, 0, "HC")
+                        ExerciseEntity("hc-1", "2026-11-09", "운동", "운동", 73, 244, 0, "HC")
                     ),
-                    syncMessage = "Health 동기화 완료: 오늘 도보 5825보(+83kcal), 운동 46분(+158kcal)",
+                    syncMessage = "Health 동기화 완료: 오늘 도보 5825보(+83kcal), 운동 73분(+244kcal)",
                     onPrevMonth = {},
                     onNextMonth = {},
                     onSelectDate = {},
@@ -167,7 +174,8 @@ class SlimTrackScreenshotTest {
                     onNavigateToMealTab = {},
                     onNavigateToCoachTab = {},
                     onDeleteMeal = {},
-                    onDeleteDrink = {}
+                    onDeleteDrink = {},
+                    initialExpandedMetric = com.minsoo.slimtrack.domain.GoalMetricType.WEIGHT
                 )
             }
         }
@@ -195,12 +203,24 @@ class SlimTrackScreenshotTest {
                             carbsGrams = 32f,
                             fatGrams = 60f,
                             notes = "고단백 정식 (등심 + 닭가슴살 샐러드)"
+                        ),
+                        MealEntity(
+                            id = 2,
+                            dateIso = "2026-11-09",
+                            mealType = "BEVERAGE",
+                            photoUri = "",
+                            itemsJson = "[{\"name\":\"프로틴 음료(375ml)\",\"portion\":\"1병(375ml · BCAA 1000mg · 콜라겐 6000mg)\",\"kcal\":41,\"proteinGrams\":7.9,\"carbsGrams\":2.3,\"fatGrams\":0.0}]",
+                            totalKcal = 41,
+                            proteinGrams = 7.9f,
+                            carbsGrams = 2.3f,
+                            fatGrams = 0f,
+                            notes = "🥤 프로틴 음료(375ml · 41kcal · 단백질 7.9g)"
                         )
                     ),
                     todayDrinks = listOf(DrinkEntity(1, "2026-11-09", "SOJU", "소주: 50ml * 16.5% * 3잔", 150, 16.5f, 137)),
                     todayExercises = listOf(
                         ExerciseEntity("hc-steps-2026-11-09", "2026-11-09", "일일 걸음수(방식A)", "도보 5825보 (4,000보 초과 1825보)", 0, 83, 5825, "HC_STEPS"),
-                        ExerciseEntity("hc-1", "2026-11-09", "운동", "운동", 46, 158, 0, "HC")
+                        ExerciseEntity("hc-1", "2026-11-09", "운동", "운동(활동342+기초145)", 114, 487, 0, "HC")
                     ),
                     onSelectMealType = {},
                     onTakePhotoClick = {},
@@ -232,9 +252,32 @@ class SlimTrackScreenshotTest {
                     inBodyHistory = listOf(seedInBody),
                     isAnalyzingInBody = false,
                     syncStatusMessage = "✅ Health Connect 체중·체지방 3건 동기화 완료",
+                    weightSyncDiag = com.minsoo.slimtrack.data.health.HealthWeightSyncDiag(
+                        requestLocalIso = "2026-11-12T09:18:05",
+                        requestUtcIso = "2026-11-12T00:18:05Z",
+                        systemZoneId = "Asia/Tokyo (+09:00)",
+                        filterStartLocalIso = "2026-10-10T00:00:00",
+                        filterStartUtcIso = "2026-10-09T15:00:00Z",
+                        filterMode = "TimeRangeFilter.after (상한 없음 · 최신순)",
+                        totalRecordsReturned = 8,
+                        records = listOf(
+                            com.minsoo.slimtrack.data.health.WeightRecordTimestampDiag(
+                                weightKg = 98.3f,
+                                measuredLocalIso = "2026-11-11T08:37:00",
+                                measuredUtcIso = "2026-11-10T23:37:00Z",
+                                zoneOffsetStr = "+09:00",
+                                hcModifiedLocalIso = "2026-11-11T14:12:00",
+                                hcModifiedUtcIso = "2026-11-11T05:12:00Z",
+                                syncDelayMinutes = 335,
+                                dataOriginPackage = "com.fitbit.FitbitMobile",
+                                recordId = "hc-w-1111"
+                            )
+                        )
+                    ),
                     onManualSyncHealthConnectWeight = {},
                     onPickInBodyScreenshot = {},
-                    onSaveInBodyManualOrOcr = {}
+                    onSaveInBodyManualOrOcr = {},
+                    initialShowWeeklyWeightHistory = true
                 )
             }
         }
@@ -287,6 +330,9 @@ class SlimTrackScreenshotTest {
         composeRule.setContent {
             SlimTrackTheme {
                 Scaffold(
+                    topBar = {
+                        com.minsoo.slimtrack.CurrentTimeTopBar()
+                    },
                     bottomBar = {
                         NavigationBar {
                             MainTab.entries.forEach { tab ->

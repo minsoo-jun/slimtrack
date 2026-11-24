@@ -30,7 +30,8 @@ data class MealAnalysisResponse(
     val items: List<MealItemDto> = emptyList(),
     @SerialName("total_kcal") val totalKcal: Int = 0,
     val confidence: Float = 0.8f,
-    val notes: String = ""
+    val notes: String = "",
+    @SerialName("diet_advice") val dietAdvice: String = ""
 ) {
     fun toFoodItemEntries(): List<FoodItemEntry> = items.map {
         FoodItemEntry(
@@ -198,10 +199,11 @@ class GeminiClient(
         runCatching {
             val base64Image = encodeBase64(jpegBytes)
             val prompt = """
-                당신은 한국 음식 및 안주 전문 영양사입니다.
+                당신은 체중 감량(현재 98kg → 단기 93.5kg 목표, 일일 권장섭취 1834kcal, 골격근 38.5kg 유지, 내장지방 12→10레벨 감량)을 지도하는 한국 음식 전문 다이어트 코치입니다.
                 제공된 사진(${mealTypeLabelKo})에 있는 모든 음식과 음료를 식별하고, 1인분(또는 사진에 보이는 실제 분량) 기준으로 칼로리(kcal)와 탄수화물/단백질/지방(g)을 추정하세요.
+                또한 diet_advice 필드에 이번 [${mealTypeLabelKo}] 식단에 대한 구체적인 다이어트 관점 어드바이스(칼로리 적정성, 단백질/탄수화물/지방·나트륨 평가, 다음 끼니 또는 오늘 남은 시간 행동 지침)를 1~2문장으로 직설적이고 유익하게 작성하세요.
                 반드시 아래 JSON 형식으로만 응답하세요 (마크다운 코드블록 없이 순수 JSON):
-                {"items":[{"name":"음식명","portion":"분량","kcal":450,"protein_g":25.0,"carbs_g":30.0,"fat_g":18.0}],"total_kcal":450,"confidence":0.85,"notes":"참고 설명"}
+                {"items":[{"name":"음식명","portion":"분량","kcal":450,"protein_g":25.0,"carbs_g":30.0,"fat_g":18.0}],"total_kcal":450,"confidence":0.85,"notes":"음식 요약","diet_advice":"다이어트 관점 핵심 조언 1~2문장"}
             """.trimIndent()
 
             val responseText = callGenerateContentWith3xFallback(
@@ -233,11 +235,12 @@ class GeminiClient(
         }
         runCatching {
             val prompt = """
-                당신은 한국 음식 및 외식·안주 전문 영양사입니다.
+                당신은 체중 감량(현재 98kg → 단기 93.5kg 목표, 일일 권장섭취 1834kcal, 골격근 38.5kg 유지, 내장지방 12→10레벨 감량)을 지도하는 한국 음식 전문 다이어트 코치입니다.
                 사용자가 입력한 식사/안주 메뉴 설명("${query}", 구분: ${mealTypeLabelKo})을 분석하여, 일반적인 1인분(또는 입력된 분량) 기준의 칼로리(kcal)와 단백질/탄수화물/지방(g)을 정확히 계산하세요.
                 여러 음식이 함께 적혀 있으면(예: "삼겹살 2인분과 된장찌개") 각각의 품목으로 나누어 items 배열에 넣고 total_kcal에 합계를 넣으세요.
+                또한 diet_advice 필드에 이번 [${mealTypeLabelKo}] 식단에 대한 구체적인 다이어트 관점 어드바이스(칼로리 적정성, 탄·단·지 밸런스 평가, 다음 끼니 조절 또는 유산소 운동 팁)를 1~2문장으로 작성하세요.
                 반드시 아래 순수 JSON 형식으로만 응답하세요 (마크다운 코드블록 없이):
-                {"items":[{"name":"음식명","portion":"1인분","kcal":550,"protein_g":28.0,"carbs_g":45.0,"fat_g":20.0}],"total_kcal":550,"confidence":0.9,"notes":"한 줄 영양 요약"}
+                {"items":[{"name":"음식명","portion":"1인분","kcal":550,"protein_g":28.0,"carbs_g":45.0,"fat_g":20.0}],"total_kcal":550,"confidence":0.9,"notes":"한 줄 영양 요약","diet_advice":"다이어트 관점 핵심 조언 1~2문장"}
             """.trimIndent()
 
             val responseText = callGenerateContentWith3xFallback(

@@ -122,6 +122,9 @@ fun SettingsAndProfileScreen(
     var sundayAlarm by rememberSaveable(settings.sundayMorningAlarmEnabled) { mutableStateOf(settings.sundayMorningAlarmEnabled) }
     var missingMealAlarm by rememberSaveable(settings.missingMeal21AlarmEnabled) { mutableStateOf(settings.missingMeal21AlarmEnabled) }
     var fontScalePercent by rememberSaveable(settings.fontScalePercent) { mutableStateOf(settings.fontScalePercent) }
+    var customProteinText by rememberSaveable(settings.customTargetProteinGrams) {
+        mutableStateOf(if (settings.customTargetProteinGrams > 0) settings.customTargetProteinGrams.toString() else "")
+    }
 
     var savedBanner by remember { mutableStateOf<String?>(null) }
 
@@ -173,13 +176,15 @@ fun SettingsAndProfileScreen(
 
     fun buildCurrentSettings(): AppSettings {
         val tol = toleranceText.toIntOrNull()?.coerceIn(0, 1000) ?: settings.toleranceKcal
+        val customProtein = customProteinText.toIntOrNull()?.coerceIn(0, 300) ?: 0
         return settings.copy(
             geminiModel = Gemini3Catalog.ensureGemini3Model(selectedModelId),
             toleranceKcal = tol,
             strictness = strictness,
             sundayMorningAlarmEnabled = sundayAlarm,
             missingMeal21AlarmEnabled = missingMealAlarm,
-            fontScalePercent = fontScalePercent.coerceIn(90, 160)
+            fontScalePercent = fontScalePercent.coerceIn(90, 160),
+            customTargetProteinGrams = customProtein
         )
     }
 
@@ -513,6 +518,67 @@ fun SettingsAndProfileScreen(
                         )
                     }
                 }
+
+                HorizontalDivider()
+
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = "🥩 일일 단백질 섭취 목표 (근손실 방지)",
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = customProteinText,
+                            onValueChange = {
+                                customProteinText = it
+                                autoPersistAll()
+                            },
+                            label = { Text("단백질 목표(g) · 빈칸 시 자동", fontSize = 10.sp) },
+                            placeholder = { Text("자동 (108g)", fontSize = 10.5.sp) },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                customProteinText = ""
+                                autoPersistAll()
+                            },
+                            contentPadding = PaddingValues(horizontal = 7.dp, vertical = 6.dp)
+                        ) {
+                            Text("자동", fontSize = 10.5.sp)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                customProteinText = "108"
+                                autoPersistAll()
+                            },
+                            contentPadding = PaddingValues(horizontal = 7.dp, vertical = 6.dp)
+                        ) {
+                            Text("108g", fontSize = 10.5.sp)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                customProteinText = "120"
+                                autoPersistAll()
+                            },
+                            contentPadding = PaddingValues(horizontal = 7.dp, vertical = 6.dp)
+                        ) {
+                            Text("120g", fontSize = 10.5.sp)
+                        }
+                    }
+                    Text(
+                        text = "💡 표준 권장량: 제지방량(약 67.8kg) × 1.6g = 약 108g (다이어트 중 골격근 방어 및 대사 유지)",
+                        fontSize = 10.sp,
+                        color = Color(0xFF64748B),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
 
@@ -564,7 +630,7 @@ fun SettingsAndProfileScreen(
                             s3VfText = def.stage3VisceralFatMax.toString()
                             s3MonthsText = def.stage3Months.toString()
                             onSaveProfile(def)
-                            savedBanner = "✅ 3단계 다이어트 목표가 기본 설정(1단계 93~94kg, 2단계 85~88kg, 3단계 78~82kg)으로 복원되었습니다."
+                            savedBanner = "✅ 3단계 다이어트 목표가 기본 중간값(1단계 93.5kg, 2단계 86.5kg, 3단계 80.0kg)으로 복원되었습니다."
                         },
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
                     ) {
@@ -920,7 +986,8 @@ fun SettingsAndProfileScreen(
                     onClick = {
                         autoPersistAll()
                         val p = buildCurrentProfile()
-                        savedBanner = "✅ 프로필·3단계 목표(1단계 ${p.stage1WeightMinKg.toInt()}~${p.stage1WeightMaxKg.toInt()}kg) 및 설정이 로컬에 영구 저장되었습니다."
+                        val s1Mid = (p.stage1WeightMinKg + p.stage1WeightMaxKg) / 2.0
+                        savedBanner = "✅ 프로필·3단계 목표(1단계 중간값 ${String.format("%.1f", s1Mid)}kg) 및 설정이 로컬에 영구 저장되었습니다."
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -958,14 +1025,31 @@ private fun StageGoalEditorRow(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(
-                text = stageTitle,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 1,
-                softWrap = false
-            )
+            val minD = minWeight.toDoubleOrNull() ?: 0.0
+            val maxD = maxWeight.toDoubleOrNull() ?: minD
+            val midD = (minD + maxD) / 2.0
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stageTitle,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    softWrap = false
+                )
+                Text(
+                    text = "🎯 적용 목표(중간값): ${String.format("%.1f", midD)}kg · ${visceralFat}Lv",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = StatusGreenText,
+                    maxLines = 1,
+                    softWrap = false
+                )
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)

@@ -1,6 +1,7 @@
 package com.minsoo.slimtrack.ui.meal
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,6 +51,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -56,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.minsoo.slimtrack.R
+import com.minsoo.slimtrack.data.db.DailyBeveragePreset
 import com.minsoo.slimtrack.data.db.DrinkEntity
 import com.minsoo.slimtrack.data.db.ExerciseEntity
 import com.minsoo.slimtrack.data.db.FoodItemEntry
@@ -71,6 +77,7 @@ import com.minsoo.slimtrack.ui.theme.StatusRedBorder
 import com.minsoo.slimtrack.ui.theme.StatusRedText
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
+import kotlin.math.roundToInt
 
 private val itemJsonParser = Json { ignoreUnknownKeys = true }
 
@@ -83,10 +90,13 @@ fun MealAndDrinkScreen(
     todayMeals: List<MealEntity>,
     todayDrinks: List<DrinkEntity>,
     todayExercises: List<ExerciseEntity>,
+    targetProteinGrams: Int = 108,
     onSelectMealType: (MealType) -> Unit,
     onTakePhotoClick: () -> Unit,
     onPickPhotoClick: () -> Unit,
     onSearchAndAddFoodByName: (String) -> Unit,
+    onAddQuickBeverage: (DailyBeveragePreset) -> Unit = {},
+    onChangeMealType: (MealEntity, MealType) -> Unit = { _, _ -> },
     onDeleteMeal: (MealEntity) -> Unit,
     onAddDrinkWithCount: (AlcoholPreset, Int, Float, Float, String) -> Unit,
     onDeleteDrink: (DrinkEntity) -> Unit,
@@ -141,6 +151,33 @@ fun MealAndDrinkScreen(
                 )
             }
         }
+
+        // 🥩 Daily Protein Progress & Breakdown Card
+        val consumedProteinGrams = remember(todayMeals) {
+            todayMeals.sumOf { it.proteinGrams.toDouble() }.toFloat()
+        }
+        val breakfastProtein = remember(todayMeals) {
+            todayMeals.filter { it.mealType == MealType.BREAKFAST.name }.sumOf { it.proteinGrams.toDouble() }.toFloat()
+        }
+        val lunchProtein = remember(todayMeals) {
+            todayMeals.filter { it.mealType == MealType.LUNCH.name }.sumOf { it.proteinGrams.toDouble() }.toFloat()
+        }
+        val dinnerProtein = remember(todayMeals) {
+            todayMeals.filter { it.mealType == MealType.DINNER.name }.sumOf { it.proteinGrams.toDouble() }.toFloat()
+        }
+        val snackOrDrinkProtein = remember(todayMeals) {
+            todayMeals.filter { it.mealType == MealType.SNACK.name || it.mealType == MealType.BEVERAGE.name }
+                .sumOf { it.proteinGrams.toDouble() }.toFloat()
+        }
+
+        DailyProteinOverviewCard(
+            consumedGrams = consumedProteinGrams,
+            targetGrams = targetProteinGrams,
+            breakfastGrams = breakfastProtein,
+            lunchGrams = lunchProtein,
+            dinnerGrams = dinnerProtein,
+            otherGrams = snackOrDrinkProtein
+        )
 
         if (!analysisStatusMessage.isNullOrBlank()) {
             Surface(
@@ -226,7 +263,8 @@ fun MealAndDrinkScreen(
                         ExpandableMealAccordionCard(
                             meal = meal,
                             initiallyExpanded = idx == 0,
-                            onDeleteMeal = { onDeleteMeal(meal) }
+                            onDeleteMeal = { onDeleteMeal(meal) },
+                            onChangeMealType = { newType -> onChangeMealType(meal, newType) }
                         )
                     }
                 }
@@ -248,32 +286,107 @@ fun MealAndDrinkScreen(
                     softWrap = false
                 )
 
-                // 5 MealType chips in a single equal-width row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    MealType.entries.forEach { type ->
-                        val isSelected = selectedMealType == type
-                        val bg = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-                        val fg = if (isSelected) Color.White else Color(0xFF334155)
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(bg)
-                                .clickable { onSelectMealType(type) }
-                                .padding(vertical = 8.dp),
-                            contentAlignment = Alignment.Center
+                // 6 MealType chips in a 2x3 equal-width grid so "☕음료" and all labels never truncate at 155% font scale!
+                val mealTypesRow1 = MealType.entries.take(3)
+                val mealTypesRow2 = MealType.entries.drop(3)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(mealTypesRow1, mealTypesRow2).forEach { rowTypes ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text(
-                                text = "${type.emoji}${type.labelKo}",
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = fg,
-                                maxLines = 1,
-                                softWrap = false
-                            )
+                            rowTypes.forEach { type ->
+                                val isSelected = selectedMealType == type
+                                val bg = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+                                val fg = if (isSelected) Color.White else Color(0xFF334155)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(bg)
+                                        .clickable { onSelectMealType(type) }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "${type.emoji} ${type.labelKo}",
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = fg,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Quick 1-Tap Daily Beverage Bar (커피, 우롱차, 프로틴 음료, 라떼, 제로음료, 두유)
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "☕ 일상 음료 원터치 빠른 기록 (커피 · 우롱차 · 프로틴 음료 등)",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        val bevRow1 = DailyBeveragePreset.presets.take(3)
+                        val bevRow2 = DailyBeveragePreset.presets.drop(3)
+                        listOf(bevRow1, bevRow2).forEach { rowPresets ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                rowPresets.forEach { preset ->
+                                    Surface(
+                                        color = Color.White,
+                                        shape = RoundedCornerShape(7.dp),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .border(1.dp, Color(0xFFCBD5E1), RoundedCornerShape(7.dp))
+                                            .clickable { onAddQuickBeverage(preset) }
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(vertical = 5.dp, horizontal = 4.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally
+                                        ) {
+                                            Text(
+                                                text = "${preset.emoji} ${preset.nameKo}",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF0F172A),
+                                                maxLines = 1,
+                                                softWrap = false,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            val subLabel = if (preset.proteinGrams >= 1f) {
+                                                "${preset.kcal}kcal·단${DailyBeveragePreset.formatMacroGrams(preset.proteinGrams)}g"
+                                            } else {
+                                                "${preset.kcal}kcal"
+                                            }
+                                            Text(
+                                                text = subLabel,
+                                                fontSize = 9.5.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = StatusGreenText,
+                                                maxLines = 1,
+                                                softWrap = false
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -338,7 +451,7 @@ fun MealAndDrinkScreen(
                         onValueChange = { foodQueryText = it },
                         label = {
                             Text(
-                                text = "음식명 입력 (예: 김치찌개 정식, 돈까스)",
+                                text = "음식·음료명 입력 (예: 김치찌개, 아메리카노, 프로틴 음료)",
                                 fontSize = 10.5.sp,
                                 maxLines = 1,
                                 softWrap = false
@@ -785,7 +898,8 @@ fun MealAndDrinkScreen(
 fun ExpandableMealAccordionCard(
     meal: MealEntity,
     initiallyExpanded: Boolean = false,
-    onDeleteMeal: () -> Unit
+    onDeleteMeal: () -> Unit,
+    onChangeMealType: (MealType) -> Unit = {}
 ) {
     var expanded by remember(meal.id) { mutableStateOf(initiallyExpanded) }
     val mealTypeEnum = runCatching { MealType.valueOf(meal.mealType) }.getOrNull()
@@ -798,6 +912,9 @@ fun ExpandableMealAccordionCard(
         parsedItems.joinToString(", ") { "${it.name}(${it.kcal}kcal)" }
     } else {
         meal.notes
+    }
+    val dietAdviceText = remember(meal.id, meal.mealType, meal.totalKcal, meal.proteinGrams, meal.carbsGrams, meal.fatGrams, meal.notes) {
+        buildDietAdviceForMeal(meal, mealTypeEnum, parsedItems)
     }
 
     Surface(
@@ -830,7 +947,7 @@ fun ExpandableMealAccordionCard(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "[$typeTitle] ${meal.totalKcal} kcal (단백질 ${meal.proteinGrams.toInt()}g)",
+                            text = "[$typeTitle] ${meal.totalKcal} kcal (단백질 ${DailyBeveragePreset.formatMacroGrams(meal.proteinGrams)}g)",
                             fontSize = 12.5.sp,
                             fontWeight = FontWeight.ExtraBold,
                             color = Color(0xFF0F172A),
@@ -856,6 +973,16 @@ fun ExpandableMealAccordionCard(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
+                    if (!expanded && dietAdviceText.isNotBlank()) {
+                        Text(
+                            text = "💡 $dietAdviceText",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF0F766E),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
                 Spacer(Modifier.width(8.dp))
                 DeleteRecordButton(onClick = onDeleteMeal)
@@ -874,15 +1001,57 @@ fun ExpandableMealAccordionCard(
                         modifier = Modifier.padding(10.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        // Category Change Row
+                        Text(
+                            text = "🏷️ 식단 카테고리 변경 (현재: $typeTitle)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF334155),
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            MealType.entries.forEach { type ->
+                                val isSelected = meal.mealType == type.name
+                                Surface(
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFFF1F5F9),
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable {
+                                            if (!isSelected) {
+                                                onChangeMealType(type)
+                                            }
+                                        }
+                                ) {
+                                    Text(
+                                        text = "${type.emoji} ${type.labelKo}",
+                                        fontSize = 10.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+                                        color = if (isSelected) Color.White else Color(0xFF334155),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        modifier = Modifier.padding(vertical = 5.dp, horizontal = 2.dp),
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = Color(0xFFE2E8F0))
+
                         // Macro nutrient summary badges
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             MacroBadgeChip("열량", "${meal.totalKcal}kcal", MaterialTheme.colorScheme.primary)
-                            MacroBadgeChip("단백질", "${meal.proteinGrams.toInt()}g", StatusGreenText)
-                            MacroBadgeChip("탄수화물", "${meal.carbsGrams.toInt()}g", Color(0xFF0284C7))
-                            MacroBadgeChip("지방", "${meal.fatGrams.toInt()}g", Color(0xFFD97706))
+                            MacroBadgeChip("단백질", "${DailyBeveragePreset.formatMacroGrams(meal.proteinGrams)}g", StatusGreenText)
+                            MacroBadgeChip("탄수화물", "${DailyBeveragePreset.formatMacroGrams(meal.carbsGrams)}g", Color(0xFF0284C7))
+                            MacroBadgeChip("지방", "${DailyBeveragePreset.formatMacroGrams(meal.fatGrams)}g", Color(0xFFD97706))
                         }
 
                         HorizontalDivider(color = Color(0xFFE2E8F0))
@@ -915,7 +1084,7 @@ fun ExpandableMealAccordionCard(
                                     )
                                     Spacer(Modifier.width(6.dp))
                                     Text(
-                                        text = "${item.kcal}kcal (단${item.proteinGrams.toInt()}·탄${item.carbsGrams.toInt()}·지${item.fatGrams.toInt()}g)",
+                                        text = "${item.kcal}kcal (단${DailyBeveragePreset.formatMacroGrams(item.proteinGrams)}·탄${DailyBeveragePreset.formatMacroGrams(item.carbsGrams)}·지${DailyBeveragePreset.formatMacroGrams(item.fatGrams)}g)",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = MaterialTheme.colorScheme.primary,
@@ -933,19 +1102,90 @@ fun ExpandableMealAccordionCard(
                             )
                         }
 
-                        if (meal.notes.isNotBlank()) {
-                            Text(
-                                text = "💬 메모: ${meal.notes}",
-                                fontSize = 10.5.sp,
-                                color = Color(0xFF64748B),
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                        // Highlighted Diet Coach Advice Box inside Expanded Meal Card!
+                        Surface(
+                            color = Color(0xFFF0FDFA),
+                            shape = RoundedCornerShape(7.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, Color(0xFF14B8A6), RoundedCornerShape(7.dp))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = "🩺 다이어트 관점 식단 어드바이스",
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color(0xFF0F766E),
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                                Text(
+                                    text = dietAdviceText,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF134E4A),
+                                    maxLines = 4,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }
             }
         }
+    }
+}
+
+private fun buildDietAdviceForMeal(
+    meal: MealEntity,
+    mealTypeEnum: MealType?,
+    parsedItems: List<FoodItemEntry>
+): String {
+    val rawNotes = meal.notes.trim()
+    // If Gemini already stored a custom coaching sentence in notes (not just "음식명(kcal)" list), use it!
+    val looksLikeAdviceSentence = rawNotes.length >= 22 &&
+        !rawNotes.endsWith("kcal)") &&
+        (rawNotes.contains("단백질") || rawNotes.contains("탄수화물") || rawNotes.contains("칼로리") ||
+            rawNotes.contains("섭취") || rawNotes.contains("줄이") || rawNotes.contains("좋") ||
+            rawNotes.contains("권장") || rawNotes.contains("저녁") || rawNotes.contains("점심") ||
+            rawNotes.contains("유산소") || rawNotes.contains("조절"))
+    if (looksLikeAdviceSentence) {
+        return rawNotes
+    }
+
+    val kcal = meal.totalKcal
+    val p = meal.proteinGrams
+    val c = meal.carbsGrams
+    val f = meal.fatGrams
+
+    return when (mealTypeEnum) {
+        MealType.BREAKFAST -> when {
+            kcal > 650 -> "아침 열량(${kcal}kcal)이 일일 권장량(1,834kcal) 대비 다소 높습니다. 점심·저녁은 정제 탄수화물을 줄이고 채소·단백질 위주로 각 550kcal 이내로 조절하세요."
+            p < 20f -> "아침 칼로리(${kcal}kcal)는 적정하나 단백질(${DailyBeveragePreset.formatMacroGrams(p)}g)이 부족합니다. 골격근(38.5kg) 유지를 위해 삶은 계란이나 프로틴 음료(7.9g)를 곁들이면 공복 혈당 상승도 막을 수 있습니다."
+            else -> "좋은 아침 식단(${kcal}kcal · 단백질 ${DailyBeveragePreset.formatMacroGrams(p)}g)입니다! 아침 단백질 섭취가 대사를 깨우고 점심 과식을 예방합니다."
+        }
+        MealType.LUNCH -> when {
+            kcal > 850 && p >= 35f -> "단백질(${DailyBeveragePreset.formatMacroGrams(p)}g) 보충은 매우 훌륭하나 점심 열량(${kcal}kcal)이 하루 예산(1,834kcal)의 ${((kcal * 100f) / 1834f).toInt()}%를 차지합니다. 저녁은 500kcal 이내의 저탄수·채소 식단으로 맞추세요."
+            kcal > 850 -> "점심 열량(${kcal}kcal)과 탄수화물·지방 비중이 높습니다. 오후에 우롱차/물을 충분히 마시고, 저녁은 탄수화물을 절반 이하로 줄여 일일 적자 목표를 방어하세요."
+            p < 25f -> "점심 칼로리(${kcal}kcal)는 무난하나 단백질(${DailyBeveragePreset.formatMacroGrams(p)}g)이 다소 적습니다. 저녁에는 닭가슴살·생선·두부 등 단백질 35g 이상을 꼭 보충하세요."
+            else -> "점심 칼로리(${kcal}kcal)와 단백질(${DailyBeveragePreset.formatMacroGrams(p)}g) 밸런스가 이상적입니다. 저녁까지 간식을 피하고 이 페이스를 유지하세요!"
+        }
+        MealType.DINNER -> when {
+            kcal > 700 -> "저녁 열량(${kcal}kcal)이 높아 야간 체지방·내장지방(현재 12Lv) 축적 위험이 있습니다. 식후 30분 뒤 가벼운 걷기/산책으로 최소 150~200kcal를 추가 소모하세요."
+            c > 65f -> "저녁 탄수화물(${DailyBeveragePreset.formatMacroGrams(c)}g) 비중이 다소 높습니다. 내장지방 10Lv 달성을 위해 저녁에는 밥·면류를 반 공기 이하로 줄이고 단백질·채소 비중을 높이세요."
+            p >= 25f -> "저녁으로 아주 훌륭한 고단백·절제 식단(${kcal}kcal · 단백질 ${DailyBeveragePreset.formatMacroGrams(p)}g)입니다! 취침 전 야식만 피하면 내일 아침 체중 감량이 기대됩니다."
+            else -> "저녁 열량(${kcal}kcal)이 깔끔하게 관리되었습니다. 수면 중 근손실 방지를 위해 다음에는 살코기·두부 등 단백질을 조금 더 곁들여 보세요."
+        }
+        MealType.BEVERAGE -> when {
+            kcal == 0 -> "0kcal 무당 음료(차/블랙커피)로 칼로리 부담 없이 수분 보충과 지방 대사 촉진에 매우 좋습니다."
+            p >= 5f && kcal <= 70 -> "저열량(${kcal}kcal)으로 단백질 ${DailyBeveragePreset.formatMacroGrams(p)}g(BCAA·콜라겐)을 보충하여 당류 부담 없이 골격근 방어에 최적입니다!"
+            else -> "음료로 ${kcal}kcal(탄수화물 ${DailyBeveragePreset.formatMacroGrams(c)}g)를 섭취했습니다. 액상 칼로리는 포만감이 낮으므로 남은 식사에서 탄수화물을 그만큼 줄여주세요."
+        }
+        MealType.ANJU -> "회식 안주(${kcal}kcal · 지방 ${DailyBeveragePreset.formatMacroGrams(f)}g)는 알코올과 결합해 내장지방으로 직행하기 쉽습니다. 국물·튀김 대신 구이·숙회·채소 위주로 드시고 물을 술의 2배로 마시세요."
+        else -> "간식(${kcal}kcal) 섭취 후에는 다음 본식사의 탄수화물 양을 조절하여 일일 권장 섭취량(1,834kcal)을 초과하지 않도록 관리하세요."
     }
 }
 
@@ -1055,6 +1295,221 @@ private fun QuickVolumeTile(
                 fontSize = 10.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = Color(0xFF334155),
+                maxLines = 1,
+                softWrap = false
+            )
+        }
+    }
+}
+
+@Composable
+private fun DailyProteinOverviewCard(
+    consumedGrams: Float,
+    targetGrams: Int,
+    breakfastGrams: Float,
+    lunchGrams: Float,
+    dinnerGrams: Float,
+    otherGrams: Float
+) {
+    val consumedStr = DailyBeveragePreset.formatMacroGrams(consumedGrams)
+    val target = targetGrams.coerceAtLeast(1)
+    val pct = ((consumedGrams / target.toFloat()) * 100f).roundToInt()
+    val remaining = (target.toFloat() - consumedGrams).coerceAtLeast(0f)
+    val remainingStr = DailyBeveragePreset.formatMacroGrams(remaining)
+    val isAchieved = consumedGrams >= target.toFloat()
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Header Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "🥩 오늘 단백질 섭취 현황",
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color(0xFF1E293B)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Surface(
+                        color = if (isAchieved) StatusGreenBg else Color(0xFFE0E7FF),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.border(
+                            1.dp,
+                            if (isAchieved) StatusGreenBorder else Color(0xFFA5B4FC),
+                            RoundedCornerShape(4.dp)
+                        )
+                    ) {
+                        Text(
+                            text = if (isAchieved) "목표 달성 $pct%" else "$pct%",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = if (isAchieved) StatusGreenText else Color(0xFF4338CA),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = "일일 권장 ${target}g",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF64748B)
+                )
+            }
+
+            // Big Numbers Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                Column {
+                    Text(
+                        text = "현재 섭취량",
+                        fontSize = 10.5.sp,
+                        color = Color(0xFF64748B),
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "${consumedStr} g",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Black,
+                        color = if (isAchieved) StatusGreenText else Color(0xFF0F172A)
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = if (isAchieved) "초과 달성량" else "목표까지 잔여량",
+                        fontSize = 10.5.sp,
+                        color = Color(0xFF64748B),
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = if (isAchieved) {
+                            val overG = DailyBeveragePreset.formatMacroGrams(consumedGrams - target.toFloat())
+                            "+$overG g"
+                        } else {
+                            "$remainingStr g"
+                        },
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (isAchieved) StatusGreenText else Color(0xFF2563EB)
+                    )
+                }
+            }
+
+            // Visual Progress Bar
+            val ratio = (consumedGrams / target.toFloat()).coerceIn(0f, 1.25f)
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(9.dp)
+            ) {
+                drawRoundRect(
+                    color = Color(0xFFE2E8F0),
+                    size = size,
+                    cornerRadius = CornerRadius(4.5f, 4.5f)
+                )
+                val fillW = (size.width * (ratio / 1.25f)).coerceAtMost(size.width)
+                val barColor = when {
+                    isAchieved -> Color(0xFF10B981)
+                    pct >= 70 -> Color(0xFF0D9488)
+                    pct >= 40 -> Color(0xFF6366F1)
+                    else -> Color(0xFFF59E0B)
+                }
+                drawRoundRect(
+                    color = barColor,
+                    size = Size(fillW, size.height),
+                    cornerRadius = CornerRadius(4.5f, 4.5f)
+                )
+                val markerX = size.width * (1.0f / 1.25f)
+                drawLine(
+                    color = Color(0xFF334155),
+                    start = Offset(markerX, 0f),
+                    end = Offset(markerX, size.height),
+                    strokeWidth = 2.5f
+                )
+            }
+
+            // Meal Breakdown Chips Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                ProteinMealChip("🍳 아침", breakfastGrams, Modifier.weight(1f))
+                ProteinMealChip("🍚 점심", lunchGrams, Modifier.weight(1f))
+                ProteinMealChip("🥗 저녁", dinnerGrams, Modifier.weight(1f))
+                ProteinMealChip("🥤 음료·간식", otherGrams, Modifier.weight(1f))
+            }
+
+            // Actionable advice text
+            Surface(
+                color = if (isAchieved) StatusGreenBg else Color(0xFFF8FAFC),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        1.dp,
+                        if (isAchieved) StatusGreenBorder else Color(0xFFE2E8F0),
+                        RoundedCornerShape(6.dp)
+                    )
+            ) {
+                val tip = if (isAchieved) {
+                    "💪 근손실 방지 일일 권장 단백질(${target}g) 충족 완료! 수분을 충분히 섭취해주세요."
+                } else {
+                    "💡 목표까지 ${remainingStr}g 부족 · 하단 빠른 음료에서 프로틴 음료(375ml) 추가 시 +7.9g 즉시 충전"
+                }
+                Text(
+                    text = tip,
+                    fontSize = 10.5.sp,
+                    color = if (isAchieved) StatusGreenText else Color(0xFF475569),
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProteinMealChip(
+    title: String,
+    grams: Float,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = Color(0xFFF1F5F9),
+        shape = RoundedCornerShape(6.dp),
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 4.dp, horizontal = 2.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = title,
+                fontSize = 9.sp,
+                color = Color(0xFF64748B),
+                maxLines = 1,
+                softWrap = false
+            )
+            Text(
+                text = "${DailyBeveragePreset.formatMacroGrams(grams)}g",
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (grams > 0f) Color(0xFF0F172A) else Color(0xFF94A3B8),
                 maxLines = 1,
                 softWrap = false
             )

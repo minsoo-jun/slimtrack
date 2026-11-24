@@ -89,6 +89,9 @@ interface AppDao {
     @Query("DELETE FROM weight_logs WHERE dateIso < :startDateIso")
     suspend fun deleteWeightLogsBefore(startDateIso: String)
 
+    @Query("DELETE FROM weight_logs WHERE dateIso = :dateIso AND source = 'MANUAL'")
+    suspend fun deleteManualWeightLogsForDate(dateIso: String)
+
     @Query("SELECT * FROM weight_logs ORDER BY measuredAtIso DESC")
     fun observeAllWeightLogs(): Flow<List<WeightLogEntity>>
 

@@ -20,7 +20,8 @@ data class DailyPlan(
     val tdee: Int,
     val deficitTarget: Int,
     val recommendedIntake: Int,
-    val exerciseTarget: Int
+    val exerciseTarget: Int,
+    val targetProteinGrams: Int = 108
 )
 
 data class DayRecordInput(
@@ -28,7 +29,8 @@ data class DayRecordInput(
     val mealIntakeKcal: Int,
     val drinkIntakeKcal: Int,
     val exerciseKcal: Int,
-    val mealCount: Int
+    val mealCount: Int,
+    val proteinGrams: Float = 0f
 ) {
     val totalIntakeKcal: Int get() = mealIntakeKcal + drinkIntakeKcal
     val hasMealLogged: Boolean get() = mealCount > 0
@@ -44,7 +46,9 @@ data class DayEvaluation(
     val hasMealLogged: Boolean,
     val netBalanceKcal: Int,
     val statusColor: DayStatusColor,
-    val isMissingMealFailure: Boolean
+    val isMissingMealFailure: Boolean,
+    val proteinGrams: Float = 0f,
+    val targetProteinGrams: Int = plan.targetProteinGrams
 ) {
     /**
      * Remaining calories that can still be consumed today without exceeding the target deficit.
@@ -52,6 +56,9 @@ data class DayEvaluation(
      * Negative value means calories exceeded (displayed with '-', e.g., "-240").
      */
     val remainingIntakeKcal: Int get() = netBalanceKcal
+
+    val remainingProteinGrams: Float get() = (targetProteinGrams - proteinGrams).coerceAtLeast(0f)
+    val proteinAchievementPct: Int get() = if (targetProteinGrams > 0) ((proteinGrams / targetProteinGrams) * 100f).roundToInt() else 0
 }
 
 data class PeriodRollup(
@@ -120,7 +127,8 @@ object CalorieEngine {
     fun dailyPlan(
         bmr: Int,
         activityFactor: Double,
-        deficitTarget: Int
+        deficitTarget: Int,
+        targetProteinGrams: Int = 108
     ): DailyPlan {
         val tdee = (bmr * activityFactor).roundToInt()
         val recommendedIntake = maxOf(bmr, tdee - deficitTarget)
@@ -132,7 +140,8 @@ object CalorieEngine {
             tdee = tdee,
             deficitTarget = deficitTarget,
             recommendedIntake = recommendedIntake,
-            exerciseTarget = exerciseTarget
+            exerciseTarget = exerciseTarget,
+            targetProteinGrams = targetProteinGrams
         )
     }
 
@@ -157,7 +166,8 @@ object CalorieEngine {
         today: LocalDate,
         toleranceKcal: Int = DEFAULT_TOLERANCE_KCAL,
         missingMealAsFailure: Boolean = true,
-        effectiveStartDate: LocalDate? = null
+        effectiveStartDate: LocalDate? = null,
+        targetProteinGrams: Int = plan.targetProteinGrams
     ): DayEvaluation {
         if (input.date.isAfter(today) || (effectiveStartDate != null && input.date.isBefore(effectiveStartDate))) {
             return DayEvaluation(
@@ -170,11 +180,21 @@ object CalorieEngine {
                 hasMealLogged = false,
                 netBalanceKcal = 0,
                 statusColor = DayStatusColor.GRAY,
-                isMissingMealFailure = false
+                isMissingMealFailure = false,
+                proteinGrams = input.proteinGrams,
+                targetProteinGrams = targetProteinGrams
             )
         }
 
+        val net = balance(plan, input.totalIntakeKcal, input.exerciseKcal)
+
         if (!input.hasMealLogged) {
+            val isPastDayMissingMeal = missingMealAsFailure && input.date.isBefore(today)
+            val color = when {
+                isPastDayMissingMeal -> DayStatusColor.RED
+                input.date == today -> classifyBalanceColor(net, toleranceKcal)
+                else -> DayStatusColor.GRAY
+            }
             return DayEvaluation(
                 date = input.date,
                 plan = plan,
@@ -183,17 +203,14 @@ object CalorieEngine {
                 drinkIntakeKcal = input.drinkIntakeKcal,
                 exerciseKcal = input.exerciseKcal,
                 hasMealLogged = false,
-                netBalanceKcal = if (input.drinkIntakeKcal > 0) {
-                    balance(plan, input.totalIntakeKcal, input.exerciseKcal)
-                } else {
-                    0
-                },
-                statusColor = if (missingMealAsFailure) DayStatusColor.RED else DayStatusColor.GRAY,
-                isMissingMealFailure = missingMealAsFailure
+                netBalanceKcal = net,
+                statusColor = color,
+                isMissingMealFailure = isPastDayMissingMeal,
+                proteinGrams = input.proteinGrams,
+                targetProteinGrams = targetProteinGrams
             )
         }
 
-        val net = balance(plan, input.totalIntakeKcal, input.exerciseKcal)
         val color = classifyBalanceColor(net, toleranceKcal)
         return DayEvaluation(
             date = input.date,
@@ -205,7 +222,9 @@ object CalorieEngine {
             hasMealLogged = true,
             netBalanceKcal = net,
             statusColor = color,
-            isMissingMealFailure = false
+            isMissingMealFailure = false,
+            proteinGrams = input.proteinGrams,
+            targetProteinGrams = targetProteinGrams
         )
     }
 

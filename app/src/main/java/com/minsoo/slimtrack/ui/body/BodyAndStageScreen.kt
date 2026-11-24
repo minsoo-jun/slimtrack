@@ -1,5 +1,6 @@
 package com.minsoo.slimtrack.ui.body
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -21,7 +22,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Button
@@ -31,16 +35,22 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,13 +60,23 @@ import com.minsoo.slimtrack.R
 import com.minsoo.slimtrack.data.ai.InBodyOcrResponse
 import com.minsoo.slimtrack.data.db.InBodyEntity
 import com.minsoo.slimtrack.data.db.WeightLogEntity
+import com.minsoo.slimtrack.data.health.HealthWeightSyncDiag
+import com.minsoo.slimtrack.data.prefs.UserProfile
 import com.minsoo.slimtrack.data.repo.CurrentBodyStatus
+import com.minsoo.slimtrack.domain.GoalMetricType
 import com.minsoo.slimtrack.domain.GoalStage
+import com.minsoo.slimtrack.domain.GoalTrajectoryCalculator
+import com.minsoo.slimtrack.ui.home.GoalMetricComparisonAccordion
 import com.minsoo.slimtrack.ui.theme.StatusGreenBg
 import com.minsoo.slimtrack.ui.theme.StatusGreenBorder
 import com.minsoo.slimtrack.ui.theme.StatusGreenText
+import com.minsoo.slimtrack.ui.theme.StatusRedBg
+import com.minsoo.slimtrack.ui.theme.StatusRedBorder
+import com.minsoo.slimtrack.ui.theme.StatusRedText
 import com.minsoo.slimtrack.ui.theme.TealPrimary
+import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 @Composable
 fun BodyAndStageScreen(
@@ -67,16 +87,21 @@ fun BodyAndStageScreen(
     inBodyHistory: List<InBodyEntity>,
     isAnalyzingInBody: Boolean,
     syncStatusMessage: String?,
+    weightSyncDiag: HealthWeightSyncDiag? = null,
     onManualSyncHealthConnectWeight: () -> Unit,
+    onSaveQuickTodayWeight: (Float) -> Unit = {},
     onPickInBodyScreenshot: () -> Unit,
     onSaveInBodyManualOrOcr: (InBodyOcrResponse) -> Unit = {},
+    initialShowWeeklyWeightHistory: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val latestInBody = bodyStatus.latestInBody
-    val filteredWeightLogs = remember(weightLogs, effectiveStartDate) {
-        weightLogs
-            .filter { it.dateIso >= effectiveStartDate.toString() }
-            .sortedBy { it.measuredAtIso }
+    var showWeeklyWeightHistory by remember { mutableStateOf(initialShowWeeklyWeightHistory) }
+    var showTimestampDiag by remember { mutableStateOf(true) }
+
+    // Keep all weight logs sorted chronologically so the last 7 days are always available!
+    val filteredWeightLogs = remember(weightLogs) {
+        weightLogs.sortedBy { it.measuredAtIso }
     }
 
     val latestSyncedFatPct = remember(filteredWeightLogs, latestInBody) {
@@ -197,7 +222,7 @@ fun BodyAndStageScreen(
                     }
                 }
 
-                // Summary tiles for Health Connect Weight & Body Fat
+                // Summary tiles for Health Connect Weight (Clickable to toggle 7-day weight history!) & Body Fat
                 val activeSpec = bodyStatus.stageResult.activeStageSpec
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -206,8 +231,15 @@ fun BodyAndStageScreen(
                     HealthSummaryBox(
                         label = "현재 체중 (${bodyStatus.currentWeightSource})",
                         value = String.format("%.1f kg", bodyStatus.currentWeightKg),
-                        subText = "${activeSpec.number}단계 목표: ${activeSpec.targetWeightMinKg.toInt()}~${activeSpec.targetWeightMaxKg.toInt()}kg",
+                        subText = if (showWeeklyWeightHistory) {
+                            "👆 지난 7일 체중 기록 접기 ▲"
+                        } else {
+                            "👆 터치: 지난 7일 체중 기록 보기 ▼"
+                        },
                         color = TealPrimary,
+                        isInteractive = true,
+                        isExpanded = showWeeklyWeightHistory,
+                        onClick = { showWeeklyWeightHistory = !showWeeklyWeightHistory },
                         modifier = Modifier.weight(1f)
                     )
                     HealthSummaryBox(
@@ -219,12 +251,32 @@ fun BodyAndStageScreen(
                     )
                 }
 
-                // Graph 1: Weight (kg) Trend Chart
-                WeightTrendChart(
-                    weightLogs = filteredWeightLogs,
-                    latestInBody = latestInBody,
-                    targetWeightKg = activeSpec.targetWeightMidKg.toFloat()
+                // Expandable 7-Day Weight History Panel when the user clicks on "현재 체중" (몸무게)!
+                AnimatedVisibility(visible = showWeeklyWeightHistory) {
+                    WeeklyWeightHistoryCard(
+                        today = today,
+                        weightLogs = filteredWeightLogs,
+                        inBodyHistory = inBodyHistory,
+                        latestInBody = latestInBody,
+                        onSaveQuickTodayWeight = onSaveQuickTodayWeight
+                    )
+                }
+
+                // Request & Response Timestamp Diagnostic Inspector for Health Connect Weight Sync
+                HealthWeightTimestampDiagCard(
+                    diag = weightSyncDiag,
+                    expanded = showTimestampDiag,
+                    onToggleExpand = { showTimestampDiag = !showTimestampDiag }
                 )
+
+                // Graph 1: Weight (kg) Trend Chart (also clickable to toggle 7-day weight history)
+                Box(modifier = Modifier.clickable { showWeeklyWeightHistory = !showWeeklyWeightHistory }) {
+                    WeightTrendChart(
+                        weightLogs = filteredWeightLogs,
+                        latestInBody = latestInBody,
+                        targetWeightKg = activeSpec.targetWeightMidKg.toFloat()
+                    )
+                }
 
                 HorizontalDivider()
 
@@ -284,15 +336,63 @@ fun BodyAndStageScreen(
                     }
                 }
 
-                // Clean summary grid of latest InBody metrics
+                // Clean summary grid of latest InBody metrics (clickable for Goal vs Daily Achievement comparison!)
+                var expandedBodyMetric by remember { mutableStateOf<GoalMetricType?>(null) }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    InBodyMetricChip("골격근량", "${latestInBody.skeletalMuscleKg}kg", Modifier.weight(1f))
-                    InBodyMetricChip("체지방량", "${latestInBody.bodyFatMassKg}kg", Modifier.weight(1f))
-                    InBodyMetricChip("내장지방", "${latestInBody.visceralFatLevel}Lv", Modifier.weight(1f))
-                    InBodyMetricChip("세포외수분", "${latestInBody.ecwRatio}", Modifier.weight(1f))
+                    InBodyMetricChip(
+                        label = "골격근량▾",
+                        value = "${latestInBody.skeletalMuscleKg}kg",
+                        isSelected = expandedBodyMetric == GoalMetricType.SKELETAL_MUSCLE,
+                        onClick = {
+                            expandedBodyMetric = if (expandedBodyMetric == GoalMetricType.SKELETAL_MUSCLE) null else GoalMetricType.SKELETAL_MUSCLE
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    InBodyMetricChip(
+                        label = "체지방량",
+                        value = "${latestInBody.bodyFatMassKg}kg",
+                        modifier = Modifier.weight(1f)
+                    )
+                    InBodyMetricChip(
+                        label = "내장지방▾",
+                        value = "${latestInBody.visceralFatLevel}Lv",
+                        isSelected = expandedBodyMetric == GoalMetricType.VISCERAL_FAT,
+                        onClick = {
+                            expandedBodyMetric = if (expandedBodyMetric == GoalMetricType.VISCERAL_FAT) null else GoalMetricType.VISCERAL_FAT
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    InBodyMetricChip(
+                        label = "세포외수분",
+                        value = "${latestInBody.ecwRatio}",
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                AnimatedVisibility(visible = expandedBodyMetric != null) {
+                    val m = expandedBodyMetric ?: GoalMetricType.SKELETAL_MUSCLE
+                    val series = remember(m, today, effectiveStartDate, bodyStatus, filteredWeightLogs, inBodyHistory) {
+                        GoalTrajectoryCalculator.buildSeries(
+                            metric = m,
+                            today = today,
+                            profile = UserProfile(goalStartDate = effectiveStartDate),
+                            stageResult = bodyStatus.stageResult,
+                            currentWeightKg = bodyStatus.currentWeightKg,
+                            currentBmrKcal = bodyStatus.bmrKcal,
+                            currentBmi = bodyStatus.bmi,
+                            latestInBody = latestInBody,
+                            weightLogs = filteredWeightLogs,
+                            inBodyHistory = inBodyHistory
+                        )
+                    }
+                    GoalMetricComparisonAccordion(
+                        series = series,
+                        onSelectMetric = { expandedBodyMetric = it },
+                        onClose = { expandedBodyMetric = null }
+                    )
                 }
 
                 Surface(
@@ -372,12 +472,27 @@ private fun HealthSummaryBox(
     value: String,
     subText: String,
     color: Color,
+    isInteractive: Boolean = false,
+    isExpanded: Boolean = false,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = if (isInteractive && isExpanded) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f) else MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(8.dp),
         modifier = modifier
+            .then(
+                if (isInteractive) {
+                    Modifier.border(
+                        width = if (isExpanded) 2.dp else 1.5.dp,
+                        color = color,
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                } else Modifier
+            )
+            .then(
+                if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+            )
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
@@ -391,18 +506,33 @@ private fun HealthSummaryBox(
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis
             )
-            Text(
-                text = value,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.ExtraBold,
-                color = color,
-                maxLines = 1,
-                softWrap = false
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = value,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = color,
+                    maxLines = 1,
+                    softWrap = false
+                )
+                if (isInteractive) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (isExpanded) "접기" else "지난 7일 기록 펼치기",
+                        tint = color,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
             Text(
                 text = subText,
                 fontSize = 9.5.sp,
-                color = Color(0xFF64748B),
+                fontWeight = if (isInteractive) FontWeight.Bold else FontWeight.Normal,
+                color = if (isInteractive) color else Color(0xFF64748B),
                 maxLines = 1,
                 softWrap = false,
                 overflow = TextOverflow.Ellipsis
@@ -411,23 +541,494 @@ private fun HealthSummaryBox(
     }
 }
 
+private data class DailyWeightRowItem(
+    val date: LocalDate,
+    val dayOfWeekKo: String,
+    val weightKg: Float?,
+    val bodyFatPct: Float?,
+    val timeText: String,
+    val sourceLabel: String,
+    val deltaKg: Float?
+)
+
+@Composable
+private fun WeeklyWeightHistoryCard(
+    today: LocalDate,
+    weightLogs: List<WeightLogEntity>,
+    inBodyHistory: List<InBodyEntity>,
+    latestInBody: InBodyEntity,
+    onSaveQuickTodayWeight: (Float) -> Unit = {}
+) {
+    var quickWeightText by remember { mutableStateOf("") }
+    val rows = remember(today, weightLogs, inBodyHistory, latestInBody) {
+        val start7 = today.minusDays(6)
+        val logsByDate = weightLogs.groupBy { it.dateIso }
+        val inBodyByDate = (inBodyHistory + latestInBody).groupBy { it.dateIso }
+
+        // Build chronological list over the 7-day window [today - 6 .. today]
+        val rawDays = (0L..6L).map { offset ->
+            val d = start7.plusDays(offset)
+            val iso = d.toString()
+            val dayLog = logsByDate[iso]?.maxByOrNull { it.measuredAtIso }
+            val dayInBody = inBodyByDate[iso]?.maxByOrNull { it.measuredAtIso }
+            Triple(d, dayLog, dayInBody)
+        }
+
+        var prevRecordedWeight: Float? = weightLogs
+            .filter { it.dateIso < start7.toString() }
+            .maxByOrNull { it.measuredAtIso }
+            ?.weightKg
+
+        val chronological = rawDays.map { (d, dayLog, dayInBody) ->
+            val dowKo = when (d.dayOfWeek) {
+                DayOfWeek.MONDAY -> "월"
+                DayOfWeek.TUESDAY -> "화"
+                DayOfWeek.WEDNESDAY -> "수"
+                DayOfWeek.THURSDAY -> "목"
+                DayOfWeek.FRIDAY -> "금"
+                DayOfWeek.SATURDAY -> "토"
+                DayOfWeek.SUNDAY -> "일"
+            }
+            val w = dayLog?.weightKg ?: dayInBody?.weightKg
+            val fat = dayLog?.bodyFatPct ?: dayInBody?.bodyFatPct
+            val timeStr = when {
+                dayLog != null && dayLog.measuredAtIso.length >= 16 -> dayLog.measuredAtIso.substring(11, 16)
+                dayInBody != null && dayInBody.measuredAtIso.length >= 16 -> dayInBody.measuredAtIso.substring(11, 16)
+                else -> ""
+            }
+            val src = when {
+                dayLog != null -> if (dayLog.source == "HC") "Health" else "수동"
+                dayInBody != null -> "InBody"
+                else -> "-"
+            }
+            val delta = if (w != null && prevRecordedWeight != null) {
+                w - prevRecordedWeight!!
+            } else null
+            if (w != null) {
+                prevRecordedWeight = w
+            }
+            DailyWeightRowItem(
+                date = d,
+                dayOfWeekKo = dowKo,
+                weightKg = w,
+                bodyFatPct = fat,
+                timeText = timeStr,
+                sourceLabel = src,
+                deltaKg = delta
+            )
+        }
+        // Display newest day first (Today -> 6 days ago)
+        chronological.reversed()
+    }
+
+    val recordedWeights = rows.mapNotNull { it.weightKg }
+    val oldestInWeek = recordedWeights.lastOrNull()
+    val newestInWeek = recordedWeights.firstOrNull()
+    val weekDelta = if (oldestInWeek != null && newestInWeek != null) newestInWeek - oldestInWeek else 0f
+
+    Surface(
+        color = Color(0xFFF0FDFA),
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.5.dp, TealPrimary, RoundedCornerShape(10.dp))
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "📅 지난 일주일(7일간) 몸무게 기록 (${today.minusDays(6).format(DateTimeFormatter.ofPattern("MM/dd"))}~${today.format(DateTimeFormatter.ofPattern("MM/dd"))})",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color(0xFF0F172A),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                if (recordedWeights.size >= 2) {
+                    val isLoss = weekDelta <= 0f
+                    val badgeBg = if (isLoss) StatusGreenBg else StatusRedBg
+                    val badgeFg = if (isLoss) StatusGreenText else StatusRedText
+                    Surface(
+                        color = badgeBg,
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = String.format("7일 %+.1fkg", weekDelta),
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = badgeFg,
+                            maxLines = 1,
+                            softWrap = false,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider(color = Color(0xFFCCFBF1))
+
+            rows.forEach { item ->
+                val isToday = item.date == today
+                val dateLabel = "${item.date.format(DateTimeFormatter.ofPattern("MM/dd"))}(${item.dayOfWeekKo})" +
+                    if (isToday) " 오늘" else ""
+
+                Surface(
+                    color = if (isToday) Color.White else Color.White.copy(alpha = 0.7f),
+                    shape = RoundedCornerShape(7.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(
+                            width = if (isToday) 1.dp else 0.5.dp,
+                            color = if (isToday) TealPrimary else Color(0xFFCBD5E1),
+                            shape = RoundedCornerShape(7.dp)
+                        )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Left: Date + Time + Source
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1.15f)
+                        ) {
+                            Text(
+                                text = dateLabel,
+                                fontSize = 11.5.sp,
+                                fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.SemiBold,
+                                color = Color(0xFF0F172A),
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                            if (item.timeText.isNotEmpty()) {
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = "${item.timeText}·${item.sourceLabel}",
+                                    fontSize = 9.5.sp,
+                                    color = Color(0xFF64748B),
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        // Right: Weight + BodyFat + Delta badge
+                        if (item.weightKg != null) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                if (item.bodyFatPct != null && item.bodyFatPct > 0f) {
+                                    Text(
+                                        text = String.format("체지방 %.1f%%", item.bodyFatPct),
+                                        fontSize = 10.sp,
+                                        color = Color(0xFFE11D48),
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                                Text(
+                                    text = String.format("%.1f kg", item.weightKg),
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = TealPrimary,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                                val d = item.deltaKg
+                                if (d != null) {
+                                    val deltaColor = when {
+                                        d < -0.04f -> StatusGreenText
+                                        d > 0.04f -> StatusRedText
+                                        else -> Color(0xFF64748B)
+                                    }
+                                    val deltaText = when {
+                                        d < -0.04f -> String.format("▼%.1f", d)
+                                        d > 0.04f -> String.format("▲+%.1f", d)
+                                        else -> "0.0"
+                                    }
+                                    Text(
+                                        text = deltaText,
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = deltaColor,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                            }
+                        } else {
+                            Text(
+                                text = "미측정 (-)",
+                                fontSize = 11.sp,
+                                color = Color(0xFF94A3B8),
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(color = Color(0xFFCCFBF1))
+
+            // Quick Today Weight Input Bar for when Fitbit -> Health Connect background sync is delayed
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = quickWeightText,
+                    onValueChange = { quickWeightText = it },
+                    label = {
+                        Text(
+                            text = "⚡ 오늘($today) 체중 즉시 반영 (예: 97.5)",
+                            fontSize = 10.sp,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+                Button(
+                    onClick = {
+                        val wVal = quickWeightText.trim().toFloatOrNull()
+                        if (wVal != null && wVal in 30f..250f) {
+                            onSaveQuickTodayWeight(wVal)
+                            quickWeightText = ""
+                        }
+                    },
+                    enabled = quickWeightText.trim().toFloatOrNull()?.let { it in 30f..250f } == true,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 10.dp)
+                ) {
+                    Text(
+                        text = "오늘 반영",
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HealthWeightTimestampDiagCard(
+    diag: HealthWeightSyncDiag?,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit
+) {
+    Surface(
+        color = Color(0xFFF8FAFC),
+        shape = RoundedCornerShape(10.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFF94A3B8), RoundedCornerShape(10.dp))
+    ) {
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggleExpand),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "🔍 Health Connect 체중 송수신 타임스탬프 진단 로그",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color(0xFF0F172A),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = Color(0xFF475569),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Surface(
+                        color = Color(0xFFFEF3C7),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "💡 [원인 안내] Fitbit(Google Health) 앱에서 측정된 체중(예: 09:02 97.5kg)은 Fitbit 클라우드에 먼저 기록되며, Android Health Connect DB로는 백그라운드 주기에 따라 지연 전달됩니다. Fitbit 앱 첫 화면('오늘' 탭)을 아래로 당겨 새로고침한 뒤 [Health 동기화]를 누르거나, 위 '오늘 체중 즉시 반영'에 입력하시면 즉시 반영됩니다.",
+                            fontSize = 10.sp,
+                            color = Color(0xFF92400E),
+                            modifier = Modifier.padding(7.dp)
+                        )
+                    }
+
+                    val context = LocalContext.current
+                    OutlinedButton(
+                        onClick = {
+                            val launchIntent = context.packageManager.getLaunchIntentForPackage("com.fitbit.FitbitMobile")
+                                ?: context.packageManager.getLaunchIntentForPackage("com.google.android.apps.fitness")
+                            if (launchIntent != null) {
+                                context.startActivity(launchIntent)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "Google Health / Fitbit 앱 열기 (새로고침)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            softWrap = false
+                        )
+                    }
+
+                    if (diag == null) {
+                        Text(
+                            text = "아직 동기화 로그가 없습니다. 우측 상단 [Health 동기화]를 눌러주세요.",
+                            fontSize = 10.5.sp,
+                            color = Color(0xFF64748B)
+                        )
+                    } else {
+                        Text(
+                            text = "📤 [송신 Request]\n• 요청 시각(Local): ${diag.requestLocalIso} (${diag.systemZoneId})\n• 요청 시각(UTC): ${diag.requestUtcIso}\n• 조회 시작(Start): ${diag.filterStartLocalIso} (UTC ${diag.filterStartUtcIso})\n• 필터 모드: ${diag.filterMode}",
+                            fontSize = 10.sp,
+                            color = Color(0xFF334155)
+                        )
+                        if (diag.errorText != null) {
+                            Text(
+                                text = "⚠️ 오류: ${diag.errorText}",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = StatusRedText
+                            )
+                        }
+                        HorizontalDivider(color = Color(0xFFE2E8F0))
+                        Text(
+                            text = "📥 [수신 Response — Health Connect DB 내 최근 체중 ${diag.totalRecordsReturned}건]",
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0F172A)
+                        )
+                        diag.records.take(5).forEachIndexed { idx, rec ->
+                            val delayText = if (rec.syncDelayMinutes > 0) {
+                                "+${rec.syncDelayMinutes}분 지연 기록"
+                            } else {
+                                "즉시 기록(${rec.syncDelayMinutes}분)"
+                            }
+                            Surface(
+                                color = Color.White,
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(0.5.dp, Color(0xFFCBD5E1), RoundedCornerShape(6.dp))
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
+                                    verticalArrangement = Arrangement.spacedBy(1.dp)
+                                ) {
+                                    Text(
+                                        text = "#${idx + 1} ${rec.weightKg}kg · 출처: ${rec.dataOriginPackage}",
+                                        fontSize = 10.5.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = TealPrimary,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "• 측정(w.time): ${rec.measuredLocalIso} (UTC ${rec.measuredUtcIso}, offset=${rec.zoneOffsetStr})",
+                                        fontSize = 9.5.sp,
+                                        color = Color(0xFF334155),
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "• HC저장(lastModified): ${rec.hcModifiedLocalIso} ($delayText)",
+                                        fontSize = 9.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (rec.syncDelayMinutes >= 10) Color(0xFFB45309) else StatusGreenText,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun InBodyMetricChip(
     label: String,
     value: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isSelected: Boolean = false,
+    onClick: (() -> Unit)? = null
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
         shape = RoundedCornerShape(6.dp),
         modifier = modifier
+            .then(
+                if (isSelected) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp))
+                else Modifier
+            )
+            .then(
+                if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+            )
     ) {
         Column(
             modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(text = label, fontSize = 9.5.sp, color = Color(0xFF64748B), maxLines = 1, softWrap = false)
-            Text(text = value, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, softWrap = false)
+            Text(
+                text = label,
+                fontSize = 9.5.sp,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF64748B),
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                maxLines = 1,
+                softWrap = false
+            )
+            Text(
+                text = value,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else Color(0xFF0F172A),
+                maxLines = 1,
+                softWrap = false
+            )
         }
     }
 }
@@ -761,7 +1362,7 @@ private fun StageRoadmapItem(
             }
 
             Text(
-                text = "목표 체중: ${spec.targetWeightMinKg.toInt()}~${spec.targetWeightMaxKg.toInt()}kg · 목표 내장지방: ${spec.targetVisceralFatMax}Lv 이하 (마감: $stageDeadline)",
+                text = "목표 체중(중간값): ${spec.targetWeightMidFormatted}kg · 목표 내장지방: ${spec.targetVisceralFatMax}Lv (마감: $stageDeadline)",
                 fontSize = 11.5.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,

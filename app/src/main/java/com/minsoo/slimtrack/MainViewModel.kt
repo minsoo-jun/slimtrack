@@ -16,6 +16,7 @@ import com.minsoo.slimtrack.data.db.InBodyEntity
 import com.minsoo.slimtrack.data.db.MealEntity
 import com.minsoo.slimtrack.data.db.MealType
 import com.minsoo.slimtrack.data.db.WeightLogEntity
+import com.minsoo.slimtrack.data.health.HealthWeightSyncDiag
 import com.minsoo.slimtrack.data.prefs.AppSettings
 import com.minsoo.slimtrack.data.prefs.Gemini3Catalog
 import com.minsoo.slimtrack.data.prefs.GeminiModelOption
@@ -42,6 +43,7 @@ class MainViewModel(
     private val repository: SlimTrackRepository
 ) : ViewModel() {
 
+    private val _todayDate = MutableStateFlow(LocalDate.now())
     private val _currentYearMonth = MutableStateFlow(YearMonth.now())
     val currentYearMonth: StateFlow<YearMonth> = _currentYearMonth.asStateFlow()
 
@@ -74,6 +76,9 @@ class MainViewModel(
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage.asStateFlow()
 
+    private val _weightSyncDiag = MutableStateFlow<HealthWeightSyncDiag?>(null)
+    val weightSyncDiag: StateFlow<HealthWeightSyncDiag?> = _weightSyncDiag.asStateFlow()
+
     private val _availableGemini3Models = MutableStateFlow(Gemini3Catalog.presetModels)
     val availableGemini3Models: StateFlow<List<GeminiModelOption>> = _availableGemini3Models.asStateFlow()
 
@@ -83,8 +88,11 @@ class MainViewModel(
     private val _modelFetchMessage = MutableStateFlow<String?>(null)
     val modelFetchMessage: StateFlow<String?> = _modelFetchMessage.asStateFlow()
 
-    val dashboardState: StateFlow<DashboardState?> = _currentYearMonth
-        .flatMapLatest { ym -> repository.observeDashboard(ym, LocalDate.now()) }
+    val dashboardState: StateFlow<DashboardState?> = kotlinx.coroutines.flow.combine(
+        _currentYearMonth,
+        _todayDate
+    ) { ym, today -> ym to today }
+        .flatMapLatest { (ym, today) -> repository.observeDashboard(ym, today) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val selectedDateMeals: StateFlow<List<MealEntity>> = _selectedDate
@@ -115,6 +123,7 @@ class MainViewModel(
         viewModelScope.launch {
             runCatching {
                 repository.autoRepairAndSanitizeLocalData()
+                _weightSyncDiag.value = repository.healthConnectRepository.lastWeightSyncDiag
             }
         }
     }
@@ -162,7 +171,7 @@ class MainViewModel(
         val items = _stagedItems.value
         if (items.isEmpty()) return
         viewModelScope.launch {
-            val saved = repository.saveMealWithItems(
+            val result = repository.saveMealWithItems(
                 date = _selectedDate.value,
                 mealType = _selectedMealType.value,
                 items = items,
@@ -174,7 +183,18 @@ class MainViewModel(
             _stagedItems.value = emptyList()
             _stagedNotes.value = ""
             _stagedPhotoUri.value = ""
-            _statusMessage.value = "✅ [${_selectedMealType.value.labelKo}] ${saved.totalKcal}kcal 저장 완료"
+            val status = buildString {
+                if (result.meal != null) {
+                    append("✅ [${_selectedMealType.value.labelKo}] ${result.meal.totalKcal}kcal 저장 완료")
+                }
+                if (result.drinks.isNotEmpty()) {
+                    if (isNotEmpty()) append(" + ")
+                    val drinkKcal = result.drinks.sumOf { it.kcal }
+                    val drinkNames = result.drinks.joinToString(", ") { it.displayLabel }
+                    append("🍺 주류 자동 분리 등록 (${drinkNames} · ${drinkKcal}kcal)")
+                }
+            }
+            _statusMessage.value = status
         }
     }
 
@@ -199,23 +219,31 @@ class MainViewModel(
             _isAnalyzingPhoto.value = false
             result.onSuccess { resp ->
                 val entries = resp.toFoodItemEntries()
-                val summaryNote = if (entries.isNotEmpty()) {
-                    entries.joinToString(", ") { "${it.name}(${it.kcal}kcal)" }
-                } else {
-                    resp.notes
-                }
-                val saved = repository.saveMealWithItems(
+                val adviceText = resp.dietAdvice.trim().ifBlank { resp.notes.trim() }
+                val savedResult = repository.saveMealWithItems(
                     date = _selectedDate.value,
                     mealType = _selectedMealType.value,
                     items = entries,
                     photoUri = uri.toString(),
                     confidence = resp.confidence,
-                    notes = summaryNote,
+                    notes = adviceText,
                     userEdited = false
                 )
                 _stagedItems.value = emptyList()
                 _stagedNotes.value = ""
-                _statusMessage.value = "✅ [${_selectedMealType.value.labelKo}] 사진 분석 및 자동 저장 완료: ${saved.totalKcal}kcal ($summaryNote)"
+                val adviceSnippet = if (adviceText.isNotBlank()) " · 💡 $adviceText" else ""
+                val status = buildString {
+                    if (savedResult.meal != null) {
+                        append("✅ [${_selectedMealType.value.labelKo}] ${savedResult.meal.totalKcal}kcal 저장 완료$adviceSnippet")
+                    }
+                    if (savedResult.drinks.isNotEmpty()) {
+                        if (isNotEmpty()) append(" + ")
+                        val drinkKcal = savedResult.drinks.sumOf { it.kcal }
+                        val drinkNames = savedResult.drinks.joinToString(", ") { it.displayLabel }
+                        append("🍺 주류 자동 분리 등록 (${drinkNames} · ${drinkKcal}kcal)")
+                    }
+                }
+                _statusMessage.value = status
             }.onFailure { err ->
                 _statusMessage.value = "⚠️ 사진 분석 실패: ${err.message}"
             }
@@ -240,20 +268,68 @@ class MainViewModel(
                 val entries = resp.toFoodItemEntries().ifEmpty {
                     listOf(FoodItemEntry(name = query, portion = "1인분", kcal = resp.totalKcal.coerceAtLeast(300)))
                 }
-                val summaryNote = entries.joinToString(", ") { "${it.name}(${it.kcal}kcal)" }
-                val saved = repository.saveMealWithItems(
+                val adviceText = resp.dietAdvice.trim().ifBlank { resp.notes.trim() }
+                val savedResult = repository.saveMealWithItems(
                     date = _selectedDate.value,
                     mealType = _selectedMealType.value,
                     items = entries,
                     photoUri = "",
                     confidence = resp.confidence,
-                    notes = summaryNote,
+                    notes = adviceText,
                     userEdited = false
                 )
-                _statusMessage.value = "✅ [${_selectedMealType.value.labelKo}] '$query' AI 칼로리 자동 추가 완료: ${saved.totalKcal}kcal (단백질 ${saved.proteinGrams.toInt()}g)"
+                val adviceSnippet = if (adviceText.isNotBlank()) " · 💡 $adviceText" else ""
+                val status = buildString {
+                    if (savedResult.meal != null) {
+                        append("✅ [${_selectedMealType.value.labelKo}] '$query' ${savedResult.meal.totalKcal}kcal 추가 완료$adviceSnippet")
+                    }
+                    if (savedResult.drinks.isNotEmpty()) {
+                        if (isNotEmpty()) append(" + ")
+                        val drinkKcal = savedResult.drinks.sumOf { it.kcal }
+                        val drinkNames = savedResult.drinks.joinToString(", ") { it.displayLabel }
+                        append("🍺 주류 자동 분리 등록 (${drinkNames} · ${drinkKcal}kcal)")
+                    }
+                }
+                _statusMessage.value = status
             }.onFailure { err ->
                 _statusMessage.value = "⚠️ 음식명 칼로리 검색 실패: ${err.message}"
             }
+        }
+    }
+
+    fun addQuickBeverage(preset: com.minsoo.slimtrack.data.db.DailyBeveragePreset) {
+        viewModelScope.launch {
+            val entry = preset.toFoodItemEntry()
+            val savedResult = repository.saveMealWithItems(
+                date = _selectedDate.value,
+                mealType = MealType.BEVERAGE,
+                items = listOf(entry),
+                photoUri = "",
+                confidence = 1.0f,
+                notes = "${preset.emoji} ${preset.nameKo}(${preset.portion})",
+                userEdited = false
+            )
+            val proteinSuffix = if (preset.proteinGrams >= 1f) {
+                " · 단백질 ${com.minsoo.slimtrack.data.db.DailyBeveragePreset.formatMacroGrams(preset.proteinGrams)}g"
+            } else ""
+            val kcal = savedResult.meal?.totalKcal ?: preset.kcal
+            _statusMessage.value = "☕ [음료] ${preset.nameKo} (${kcal}kcal$proteinSuffix) 추가 완료"
+        }
+    }
+
+    fun changeMealType(meal: MealEntity, newType: MealType) {
+        viewModelScope.launch {
+            val updated = meal.copy(mealType = newType.name, userEdited = true)
+            repository.dao.updateMeal(updated)
+            val oldLabel = runCatching { MealType.valueOf(meal.mealType).labelKo }.getOrDefault(meal.mealType)
+            _statusMessage.value = "🔄 식단 분류가 [$oldLabel]에서 [${newType.labelKo}](으)로 변경되었습니다."
+        }
+    }
+
+    fun saveManualWeight(weightKg: Float, date: LocalDate = _selectedDate.value) {
+        viewModelScope.launch {
+            val saved = repository.saveWeightLog(weightKg, date)
+            _statusMessage.value = "⚖️ ${saved.dateIso} 체중 ${saved.weightKg}kg 즉시 반영 완료 (Health Connect 저장 동기화)"
         }
     }
 
@@ -407,7 +483,17 @@ class MainViewModel(
 
     fun syncHealthConnect() {
         viewModelScope.launch {
-            val msg = repository.autoRepairAndSanitizeLocalData()
+            val nowDate = LocalDate.now()
+            if (_todayDate.value != nowDate) {
+                val prevToday = _todayDate.value
+                _todayDate.value = nowDate
+                if (_selectedDate.value == prevToday) {
+                    _selectedDate.value = nowDate
+                    _currentYearMonth.value = YearMonth.from(nowDate)
+                }
+            }
+            val msg = repository.autoRepairAndSanitizeLocalData(today = nowDate)
+            _weightSyncDiag.value = repository.healthConnectRepository.lastWeightSyncDiag
             _statusMessage.value = msg
         }
     }

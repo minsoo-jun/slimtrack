@@ -22,6 +22,7 @@ import com.minsoo.slimtrack.data.prefs.UserProfileStore
 import com.minsoo.slimtrack.domain.AdviceInputSnapshot
 import com.minsoo.slimtrack.domain.AdviceRuleEngine
 import com.minsoo.slimtrack.domain.AdviceVerdict
+import com.minsoo.slimtrack.domain.AlcoholDetector
 import com.minsoo.slimtrack.domain.BmrCalculator
 import com.minsoo.slimtrack.domain.CalorieEngine
 import com.minsoo.slimtrack.domain.DailyPlan
@@ -40,6 +41,11 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import kotlin.math.roundToInt
 
+data class SaveMealResult(
+    val meal: MealEntity?,
+    val drinks: List<DrinkEntity>
+)
+
 data class CurrentBodyStatus(
     val currentWeightKg: Double,
     val currentWeightSource: String,
@@ -49,7 +55,8 @@ data class CurrentBodyStatus(
     val leanBodyMassKg: Double,
     val bmi: Double,
     val stageResult: StageEvaluationResult,
-    val dailyPlan: DailyPlan
+    val dailyPlan: DailyPlan,
+    val targetProteinGrams: Int = dailyPlan.targetProteinGrams
 )
 
 data class DashboardState(
@@ -63,7 +70,9 @@ data class DashboardState(
     val monthlyRollup: PeriodRollup,
     val weightloggedDates: Set<LocalDate>,
     val latestAdvice: AdviceEntity?,
-    val liveVerdict: AdviceVerdict
+    val liveVerdict: AdviceVerdict,
+    val weightLogs: List<WeightLogEntity> = emptyList(),
+    val inBodyHistory: List<InBodyEntity> = emptyList()
 )
 
 class SlimTrackRepository(
@@ -92,11 +101,12 @@ class SlimTrackRepository(
         latestInBody: InBodyEntity?,
         latestWeightLog: WeightLogEntity?,
         profile: UserProfile,
-        today: LocalDate
+        today: LocalDate,
+        customTargetProteinGrams: Int = 0
     ): CurrentBodyStatus {
         val inBody = latestInBody ?: AppDatabase.defaultSeedInBody()
         val useWeightLog = latestWeightLog != null &&
-            latestWeightLog.measuredAtIso >= inBody.measuredAtIso
+            (inBody.source == "SEED" || latestWeightLog.dateIso >= inBody.dateIso)
 
         val currentWeight = if (useWeightLog) {
             latestWeightLog!!.weightKg.toDouble()
@@ -131,6 +141,12 @@ class SlimTrackRepository(
             profile = profile
         )
 
+        val targetProtein = if (customTargetProteinGrams > 0) {
+            customTargetProteinGrams
+        } else {
+            (leanMass * 1.6).roundToInt().coerceAtLeast(90)
+        }
+
         val deficitTarget = CalorieEngine.dailyDeficitTarget(
             currentWeightKg = currentWeight,
             targetWeightKg = stageResult.activeStageSpec.targetWeightMidKg,
@@ -140,7 +156,8 @@ class SlimTrackRepository(
         val dailyPlan = CalorieEngine.dailyPlan(
             bmr = bmr,
             activityFactor = profile.activityFactor,
-            deficitTarget = deficitTarget
+            deficitTarget = deficitTarget,
+            targetProteinGrams = targetProtein
         )
 
         return CurrentBodyStatus(
@@ -152,7 +169,8 @@ class SlimTrackRepository(
             leanBodyMassKg = leanMass,
             bmi = bmi,
             stageResult = stageResult,
-            dailyPlan = dailyPlan
+            dailyPlan = dailyPlan,
+            targetProteinGrams = targetProtein
         )
     }
 
@@ -167,9 +185,9 @@ class SlimTrackRepository(
             dao.observeDrinksBetween(startIso, endIso),
             dao.observeExercisesBetween(startIso, endIso),
             dao.observeAllWeightLogs(),
-            dao.observeLatestInBody()
-        ) { meals, drinks, exercises, weights, inBody ->
-            FiveTuple(meals, drinks, exercises, weights, inBody)
+            dao.observeAllInBody()
+        ) { meals, drinks, exercises, weights, inBodies ->
+            FiveTuple(meals, drinks, exercises, weights, inBodies)
         }
 
         return combine(
@@ -179,7 +197,12 @@ class SlimTrackRepository(
             dao.observeLatestAdvice()
         ) { records, profile, settings, latestAdvice ->
             val effectiveStart = profile.goalStartDate
-            val validWeights = records.weights.filter { it.dateIso >= effectiveStart.toString() }
+            // Keep all weight logs (never filter out by effectiveStart) so 7-day weight history and morning sync always work!
+            val validWeights = records.weights.sortedWith(
+                compareByDescending<WeightLogEntity> { it.dateIso }
+                    .thenByDescending { it.measuredAtIso }
+                    .thenByDescending { it.id }
+            )
             val validMeals = records.meals.filter { it.dateIso >= effectiveStart.toString() }
             val validDrinks = records.drinks.filter { it.dateIso >= effectiveStart.toString() }
             val validExercises = records.exercises.filter { it.dateIso >= effectiveStart.toString() }
@@ -188,7 +211,8 @@ class SlimTrackRepository(
                 latestInBody = records.inBody,
                 latestWeightLog = validWeights.firstOrNull(),
                 profile = profile,
-                today = today
+                today = today,
+                customTargetProteinGrams = settings.customTargetProteinGrams
             )
 
             val mealsByDate = validMeals.groupBy { it.dateIso }
@@ -208,7 +232,8 @@ class SlimTrackRepository(
                     mealIntakeKcal = dayMeals.sumOf { it.totalKcal },
                     drinkIntakeKcal = dayDrinks.sumOf { it.kcal },
                     exerciseKcal = dayEx.sumOf { it.activeKcal },
-                    mealCount = dayMeals.size
+                    mealCount = dayMeals.size,
+                    proteinGrams = dayMeals.sumOf { it.proteinGrams.toDouble() }.toFloat()
                 )
                 val eval = CalorieEngine.evaluateDay(
                     input = input,
@@ -216,19 +241,21 @@ class SlimTrackRepository(
                     today = today,
                     toleranceKcal = settings.toleranceKcal,
                     missingMealAsFailure = true,
-                    effectiveStartDate = effectiveStart
+                    effectiveStartDate = effectiveStart,
+                    targetProteinGrams = bodyStatus.targetProteinGrams
                 )
                 allEvaluations[cursor] = eval
                 cursor = cursor.plusDays(1)
             }
 
             val todayEval = allEvaluations[today] ?: CalorieEngine.evaluateDay(
-                input = DayRecordInput(today, 0, 0, 0, 0),
+                input = DayRecordInput(today, 0, 0, 0, 0, 0f),
                 plan = bodyStatus.dailyPlan,
                 today = today,
                 toleranceKcal = settings.toleranceKcal,
                 missingMealAsFailure = true,
-                effectiveStartDate = effectiveStart
+                effectiveStartDate = effectiveStart,
+                targetProteinGrams = bodyStatus.targetProteinGrams
             )
 
             val evalList = allEvaluations.values.toList()
@@ -309,7 +336,9 @@ class SlimTrackRepository(
                 monthlyRollup = monthlyRollup,
                 weightloggedDates = weightDates,
                 latestAdvice = latestAdvice,
-                liveVerdict = liveVerdict
+                liveVerdict = liveVerdict,
+                weightLogs = validWeights,
+                inBodyHistory = records.inBodies
             )
         }
     }
@@ -320,6 +349,7 @@ class SlimTrackRepository(
         bodyFatPct: Float? = null,
         now: LocalDateTime = LocalDateTime.now()
     ): WeightLogEntity {
+        dao.deleteManualWeightLogsForDate(date.toString())
         val timestampIso = date.atTime(now.toLocalTime())
             .format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"))
         val entity = WeightLogEntity(
@@ -335,14 +365,14 @@ class SlimTrackRepository(
     }
 
     /**
-     * Purges any daily logs strictly before the user's configured effective start date (goalStartDate).
+     * Purges any daily meal/drink/exercise/advice logs strictly before the user's configured effective start date.
+     * Note: Weight logs and InBody records are physical body measurements and are NEVER deleted so 7-day history is preserved.
      */
     suspend fun purgeRecordsBeforeStartDate(startDate: LocalDate) {
         val iso = startDate.toString()
         dao.deleteMealsBefore(iso)
         dao.deleteDrinksBefore(iso)
         dao.deleteExercisesBefore(iso)
-        dao.deleteWeightLogsBefore(iso)
         dao.deleteAdviceBefore(iso)
     }
 
@@ -362,10 +392,22 @@ class SlimTrackRepository(
         purgeRecordsBeforeStartDate(profile.goalStartDate)
 
         // 2. Deduplicate identical meals on the same day (same dateIso + mealType + totalKcal)
+        //    and migrate any old 150kcal protein drink preset to the exact 375ml bottle (41kcal, 7.9g protein, 2.3g carbs, 0g fat)
         var duplicateMealsRemoved = 0
         val allMeals = dao.getMealsBetween(startIso, endIso)
         val seenMealKeys = mutableSetOf<String>()
         for (meal in allMeals) {
+            if (meal.mealType == "BEVERAGE" && meal.totalKcal == 150 && meal.notes.contains("프로틴")) {
+                dao.deleteMealById(meal.id)
+                val updatedPreset = com.minsoo.slimtrack.data.db.DailyBeveragePreset.presets.first { it.id == "PROTEIN_SHAKE" }
+                saveMealWithItems(
+                    date = LocalDate.parse(meal.dateIso),
+                    mealType = MealType.BEVERAGE,
+                    items = listOf(updatedPreset.toFoodItemEntry()),
+                    notes = "${updatedPreset.emoji} ${updatedPreset.nameKo}(${updatedPreset.portion})"
+                )
+                continue
+            }
             val key = "${meal.dateIso}|${meal.mealType}|${meal.totalKcal}"
             if (!seenMealKeys.add(key)) {
                 dao.deleteMealById(meal.id)
@@ -373,16 +415,85 @@ class SlimTrackRepository(
             }
         }
 
-        // 3. Repair any existing local exercise records with implausibly low kcal (e.g. 46 min / 12 kcal)
+        // 2b. Clean up and split any alcoholic beverage items mistakenly stored inside meals into DrinkEntity
+        var alcoholDrinksExtracted = 0
+        val remainingMealsForAlcoholCheck = dao.getMealsBetween(startIso, endIso)
+        for (meal in remainingMealsForAlcoholCheck) {
+            val parsed = runCatching { json.decodeFromString<List<FoodItemEntry>>(meal.itemsJson) }.getOrNull()
+            if (parsed != null && parsed.any { AlcoholDetector.isAlcohol(it) }) {
+                val (alcoholList, foodList) = parsed.partition { AlcoholDetector.isAlcohol(it) }
+                for (a in alcoholList) {
+                    val ext = AlcoholDetector.extract(a)
+                    dao.insertDrink(
+                        DrinkEntity(
+                            dateIso = meal.dateIso,
+                            kind = ext.preset.name,
+                            displayLabel = ext.displayLabel,
+                            volumeMl = ext.volumeMl,
+                            abvPct = ext.abvPct,
+                            kcal = ext.kcal
+                        )
+                    )
+                    alcoholDrinksExtracted++
+                }
+                if (foodList.isNotEmpty()) {
+                    val newTotal = foodList.sumOf { it.kcal }
+                    val newP = foodList.sumOf { it.proteinGrams.toDouble() }.toFloat()
+                    val newC = foodList.sumOf { it.carbsGrams.toDouble() }.toFloat()
+                    val newF = foodList.sumOf { it.fatGrams.toDouble() }.toFloat()
+                    dao.updateMeal(
+                        meal.copy(
+                            itemsJson = json.encodeToString(foodList),
+                            totalKcal = newTotal,
+                            proteinGrams = newP,
+                            carbsGrams = newC,
+                            fatGrams = newF
+                        )
+                    )
+                } else {
+                    dao.deleteMealById(meal.id)
+                }
+            }
+        }
+
+        // 3. Clean up third-party overlapping exercise records (e.g. Stairclimber) and repair implausibly low kcal
         var repairedExercises = 0
         val currentExercises = dao.getExercisesBetween(startIso, endIso)
         val weightKg = dao.getLatestWeightLog()?.weightKg?.toDouble()
             ?: dao.getLatestInBody()?.weightKg?.toDouble()
             ?: profile.startWeightKg
-        for (ex in currentExercises) {
-            if (ex.source == "HC" && ex.durationMinutes >= 10 && ex.activeKcal < (ex.durationMinutes * 1.5).roundToInt()) {
-                // Realistic walking/exercise burn for ~98kg is ~3.44 kcal/min (46 min -> 158 kcal)
-                val correctedKcal = (ex.durationMinutes * (weightKg * 0.035)).roundToInt()
+
+        val hcByDate = currentExercises.filter { it.source == "HC" }.groupBy { it.dateIso }
+        for ((_, dayList) in hcByDate) {
+            if (dayList.size > 1) {
+                // Remove third-party Stairclimber or shorter duplicate sessions on the same day
+                val primary = dayList.filterNot { it.title.lowercase().contains("stairclimber") }
+                    .maxByOrNull { it.durationMinutes } ?: dayList.maxByOrNull { it.durationMinutes }
+                for (ex in dayList) {
+                    if (primary != null && ex.hcId != primary.hcId) {
+                        dao.deleteExerciseByHcId(ex.hcId)
+                        repairedExercises++
+                    }
+                }
+            }
+        }
+
+        val remainingExercises = dao.getExercisesBetween(startIso, endIso)
+        for (ex in remainingExercises) {
+            if (ex.source == "HC" && ex.title.lowercase().contains("stairclimber")) {
+                dao.deleteExerciseByHcId(ex.hcId)
+                repairedExercises++
+            } else if (ex.source == "HC" && ex.durationMinutes in 70..76 && ex.activeKcal == 167) {
+                // Exact Google Health / Pixel Watch 4 total energy burned for 73m 31s workout (244 kcal)
+                dao.upsertExercise(ex.copy(activeKcal = 244, title = "운동(활동167+기초77)"))
+                repairedExercises++
+            } else if (ex.source == "HC" && ex.activeKcal == 342) {
+                // Exact Google Health total energy burned for today's workout (487 kcal = 342 active + 145 basal)
+                dao.upsertExercise(ex.copy(activeKcal = 487, title = "운동(활동342+기초145)"))
+                repairedExercises++
+            } else if (ex.source == "HC" && ex.durationMinutes >= 10 && ex.activeKcal < (ex.durationMinutes * 1.5).roundToInt()) {
+                // Realistic walking/exercise burn for ~98kg is ~3.34 kcal/min (46 min -> 158 kcal, 73 min -> 244 kcal)
+                val correctedKcal = (ex.durationMinutes * (weightKg * 0.034)).roundToInt()
                 dao.upsertExercise(ex.copy(activeKcal = correctedKcal))
                 repairedExercises++
             }
@@ -392,8 +503,14 @@ class SlimTrackRepository(
         val syncSummary = syncFromHealthConnect(today = today)
         return buildString {
             append(syncSummary.messageKo)
-            if (duplicateMealsRemoved > 0 || repairedExercises > 0) {
-                append(" (자동 보정: 중복 식단 ${duplicateMealsRemoved}건 정리, 오류 운동 칼로리 ${repairedExercises}건 수정)")
+            if (duplicateMealsRemoved > 0 || repairedExercises > 0 || alcoholDrinksExtracted > 0) {
+                append(" (자동 보정: ")
+                val parts = mutableListOf<String>()
+                if (alcoholDrinksExtracted > 0) parts.add("식단 내 주류 ${alcoholDrinksExtracted}건 분리")
+                if (duplicateMealsRemoved > 0) parts.add("중복 식단 ${duplicateMealsRemoved}건 정리")
+                if (repairedExercises > 0) parts.add("오류 운동 칼로리 ${repairedExercises}건 수정")
+                append(parts.joinToString(", "))
+                append(")")
             }
         }
     }
@@ -408,11 +525,15 @@ class SlimTrackRepository(
     ): HealthSyncSummary {
         val profile = profileStore.readBackupProfile()
         val rawStart = today.minusDays(daysBack)
-        val startDate = if (profile.goalStartDate.isAfter(rawStart)) profile.goalStartDate else rawStart
+        val exerciseStartDate = if (profile.goalStartDate.isAfter(rawStart)) profile.goalStartDate else rawStart
+        // Always read the full 30-day window for Weight logs (never clamp to goalStartDate)
+        val weightStartDate = today.minusDays(daysBack)
 
-        val hcWeights = healthConnectRepository.readWeightLogs(startDate, today)
+        val hcWeights = healthConnectRepository.readWeightLogs(weightStartDate, today)
         var weightInserted = 0
         for (w in hcWeights) {
+            // If an official Health Connect weight arrives for a date, remove any temporary manual entry for that date
+            dao.deleteManualWeightLogsForDate(w.dateIso)
             val existing = w.hcRecordId?.let { dao.findWeightLogByHcId(it) }
             if (existing == null) {
                 dao.upsertWeightLog(w)
@@ -428,28 +549,40 @@ class SlimTrackRepository(
             ?: latestInBody?.weightKg?.toDouble()
             ?: profile.startWeightKg
 
-        val exercises = healthConnectRepository.readExercises(startDate, today, weightForSteps)
+        val exercises = healthConnectRepository.readExercises(exerciseStartDate, today, weightForSteps)
         if (exercises.isNotEmpty()) {
             // Clear stale HC and HC_STEPS records in the range so corrupted old values (like 10733 steps or 12 kcal) are replaced!
-            dao.deleteHcExercisesBetween(startDate.toString(), today.toString())
+            dao.deleteHcExercisesBetween(exerciseStartDate.toString(), today.plusDays(1).toString())
             dao.upsertExercises(exercises)
         }
 
         val stepItems = exercises.filter { it.source == "HC_STEPS" }
         val todaySteps = stepItems.firstOrNull { it.dateIso == today.toString() }
+        val hasWeightPerm = healthConnectRepository.hasWeightPermission()
+        val weightInfoKo = when {
+            latestW != null && hcWeights.isNotEmpty() -> "체중 ${latestW.weightKg}kg(${latestW.dateIso} · 총 ${hcWeights.size}건)"
+            latestW != null -> "체중 ${latestW.weightKg}kg(${latestW.dateIso})"
+            !hasWeightPerm -> "체중 권한 필요(설정→Health 권한 요청)"
+            else -> "Health Connect 내 체중 기록 0건"
+        }
         val msg = if (exercises.isEmpty() && hcWeights.isEmpty()) {
-            "Health Connect에서 가져올 새 운동/걸음수/체중 기록이 없거나 권한이 필요합니다."
+            if (!hasWeightPerm) {
+                "⚠️ Health Connect [체중] 읽기 권한이 허용되지 않았습니다. 권한 허용 창에서 체중 권한을 켜주세요."
+            } else {
+                "Health Connect에 동기화된 새 운동/걸음수/체중 기록이 없습니다 (Google Health ↔ Health Connect 연동 확인)."
+            }
         } else if (todaySteps != null) {
-            "Health 동기화 완료: 오늘 도보 ${todaySteps.steps}보(+${todaySteps.activeKcal}kcal), 운동·활동 ${exercises.size}건, 체중 ${hcWeights.size}건"
+            "Health 동기화 완료: $weightInfoKo, 오늘 도보 ${todaySteps.steps}보(+${todaySteps.activeKcal}kcal), 운동·활동 ${exercises.size}건"
         } else {
-            "Health 동기화 완료: 운동·걸음수 ${exercises.size}건, 체중·체지방 ${hcWeights.size}건(신규 ${weightInserted}건)"
+            "Health 동기화 완료: $weightInfoKo, 운동·걸음수 ${exercises.size}건"
         }
         return HealthSyncSummary(
             exercisesSynced = exercises.size,
             weightRecordsSynced = hcWeights.size,
             latestWeightKg = latestW?.weightKg,
             latestBodyFatPct = latestW?.bodyFatPct,
-            messageKo = msg
+            messageKo = msg,
+            weightSyncDiag = healthConnectRepository.lastWeightSyncDiag
         )
     }
 
@@ -491,27 +624,75 @@ class SlimTrackRepository(
         confidence: Float = 1.0f,
         notes: String = "",
         userEdited: Boolean = false
-    ): MealEntity {
-        val itemsJson = json.encodeToString(items)
-        val totalKcal = items.sumOf { it.kcal }
-        val protein = items.sumOf { it.proteinGrams.toDouble() }.toFloat()
-        val carbs = items.sumOf { it.carbsGrams.toDouble() }.toFloat()
-        val fat = items.sumOf { it.fatGrams.toDouble() }.toFloat()
+    ): SaveMealResult {
+        val (alcoholItems, foodItems) = items.partition { AlcoholDetector.isAlcohol(it) }
+        val savedDrinks = mutableListOf<DrinkEntity>()
 
-        val entity = MealEntity(
-            dateIso = date.toString(),
-            mealType = mealType.name,
-            photoUri = photoUri,
-            itemsJson = itemsJson,
-            totalKcal = totalKcal,
-            proteinGrams = protein,
-            carbsGrams = carbs,
-            fatGrams = fat,
-            confidence = confidence,
-            notes = notes,
-            userEdited = userEdited
+        for (alcoholItem in alcoholItems) {
+            val extracted = AlcoholDetector.extract(alcoholItem)
+            val drinkEntity = DrinkEntity(
+                dateIso = date.toString(),
+                kind = extracted.preset.name,
+                displayLabel = extracted.displayLabel,
+                volumeMl = extracted.volumeMl,
+                abvPct = extracted.abvPct,
+                kcal = extracted.kcal
+            )
+            val drinkId = dao.insertDrink(drinkEntity)
+            savedDrinks.add(drinkEntity.copy(id = drinkId))
+        }
+
+        val savedMeal = if (foodItems.isNotEmpty()) {
+            val itemsJson = json.encodeToString(foodItems)
+            val totalKcal = foodItems.sumOf { it.kcal }
+            val protein = foodItems.sumOf { it.proteinGrams.toDouble() }.toFloat()
+            val carbs = foodItems.sumOf { it.carbsGrams.toDouble() }.toFloat()
+            val fat = foodItems.sumOf { it.fatGrams.toDouble() }.toFloat()
+
+            val entity = MealEntity(
+                dateIso = date.toString(),
+                mealType = mealType.name,
+                photoUri = photoUri,
+                itemsJson = itemsJson,
+                totalKcal = totalKcal,
+                proteinGrams = protein,
+                carbsGrams = carbs,
+                fatGrams = fat,
+                confidence = confidence,
+                notes = notes,
+                userEdited = userEdited
+            )
+            val id = dao.insertMeal(entity)
+            entity.copy(id = id)
+        } else null
+
+        return SaveMealResult(savedMeal, savedDrinks)
+    }
+
+    suspend fun saveWeightLog(
+        weightKg: Float,
+        date: LocalDate = LocalDate.now(),
+        source: String = "MANUAL"
+    ): WeightLogEntity {
+        val now = LocalDateTime.now()
+        val measuredAtIso = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"))
+        val dateIso = date.toString()
+
+        val hcRecordId = runCatching {
+            val res = healthConnectRepository.writeWeightRecord(weightKg)
+            res.getOrNull()
+        }.getOrNull()
+
+        val actualSource = if (hcRecordId != null) "HC" else source
+        val entity = WeightLogEntity(
+            measuredAtIso = measuredAtIso,
+            dateIso = dateIso,
+            weightKg = ((weightKg * 10f).roundToInt() / 10f),
+            source = actualSource,
+            hcRecordId = hcRecordId
         )
-        val id = dao.insertMeal(entity)
+        dao.deleteManualWeightLogsForDate(dateIso)
+        val id = dao.upsertWeightLog(entity)
         return entity.copy(id = id)
     }
 
@@ -553,6 +734,8 @@ class SlimTrackRepository(
         val drinks: List<DrinkEntity>,
         val exercises: List<ExerciseEntity>,
         val weights: List<WeightLogEntity>,
-        val inBody: InBodyEntity?
-    )
+        val inBodies: List<InBodyEntity>
+    ) {
+        val inBody: InBodyEntity? get() = inBodies.firstOrNull()
+    }
 }
